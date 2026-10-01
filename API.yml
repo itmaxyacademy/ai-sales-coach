@@ -1,0 +1,3649 @@
+  openapi: 3.0.3
+  info:
+    title: Sales AI Coach API Specification
+    description: |
+      Spesifikasi API untuk platform Sales AI Coach.
+      
+      ### Role-Based Access Control
+      
+      1. **karyawan**
+        - Akses modul latihan (Course, Roleplay, Chat, Riwayat, Coaching Hint, Analisis Wajah).
+        - Akses terbatas pada data milik sendiri.
+        
+      2. **manager**
+        - Manajemen konten latihan dan evaluasi performa tim.
+        - Fitur: Manajemen course, penugasan, dashboard tim, analitik, transkrip detail, konfigurasi SAW.
+        - Akses terbatas pada `/api/manager/*`.
+        
+      3. **admin**
+        - Operasional teknis sistem dan manajemen user.
+        - Fitur: CRUD user global, reset password, hapus sesi, monitoring, notifikasi broadcast.
+        - Akses terbatas pada `/api/admin/*`. Tidak bisa melihat transkrip sesi rep.
+        
+      4. **super_admin**
+        - Akses global (mencakup hak akses Admin dan Manager).
+        - Akses ke `/api/admin/*` dan `/api/manager/*`.
+    version: 1.0.0
+  servers:
+    - url: http://localhost:5000
+      description: Local Development Server
+  tags:
+    - name: "Authentication"
+      description: "Endpoint registrasi dan login user."
+    - name: "Karyawan (Sales Rep)"
+      description: "Endpoint Karyawan (course, sesi roleplay, riwayat, analisis wajah)."
+    - name: "Manager (Sales Manager)"
+      description: "Endpoint Manager (manajemen course, penugasan, dashboard tim, analitik, leaderboard)."
+    - name: "Admin (System Administrator)"
+      description: "Endpoint Admin (manajemen user global, konfigurasi sistem, broadcast)."
+    - name: "Super Admin (Owner)"
+      description: "Endpoint Super Admin (akses penuh)."
+    - name: "User Profile & Dashboard"
+      description: "Endpoint profil, ganti password, dan dashboard personal."
+    - name: "TTS (Text-to-Speech)"
+      description: "Endpoint TTS menggunakan Supertonic (proxy ke port 5001)."
+  security:
+    - BearerAuth: []
+  paths:
+    # ─── AUTHENTICATION ────────────────────────────────────────────────────────
+    /api/auth/register:
+      post:
+        tags:
+          - "Authentication"
+        summary: "Registrasi User Baru (Default role: karyawan)"
+        security: []
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, email, password]
+                properties:
+                  name:
+                    type: string
+                    example: "John Doe"
+                  email:
+                    type: string
+                    format: email
+                    example: "john@salescoach.ai"
+                  password:
+                    type: string
+                    minLength: 6
+                    example: "password123"
+        responses:
+          '201':
+            description: Registrasi berhasil
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/AuthResponse'
+          '409':
+            description: Email sudah terdaftar
+    /api/auth/login:
+      post:
+        tags:
+          - "Authentication"
+        summary: "Login User"
+        security: []
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [email, password]
+                properties:
+                  email:
+                    type: string
+                    format: email
+                    example: "hr@indotrack.co.id"
+                  password:
+                    type: string
+                    example: "password123"
+        responses:
+          '200':
+            description: Login berhasil
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/AuthResponse'
+          '401':
+            description: Email atau password salah
+    # ─── COURSES (SCENARIOS) ───────────────────────────────────────────────────
+    /api/courses:
+      get:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mendapatkan list course yang tersedia"
+        description: |
+          - Untuk **karyawan**: Mengembalikan hanya course yang di-assign kepada mereka.
+          - Untuk **manager/admin**: Mengembalikan semua course aktif.
+        responses:
+          '200':
+            description: List course
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    courses:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/CourseSummary'
+      post:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Membuat course/skenario baru (Akses: Manager/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCourseInput'
+        responses:
+          '201':
+            description: Course berhasil dibuat
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    course:
+                      $ref: '#/components/schemas/Course'
+    /api/courses/{courseId}:
+      get:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mendapatkan detail course & rubrik penilaiannya"
+        parameters:
+          - name: courseId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Detail course
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    course:
+                      $ref: '#/components/schemas/CourseDetail'
+      patch:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mengubah data course & rubrik (Akses: Manager/Super Admin)"
+        parameters:
+          - name: courseId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCourseInput'
+        responses:
+          '200':
+            description: Course diperbarui
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    course:
+                      $ref: '#/components/schemas/Course'
+      delete:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Soft-delete course (Akses: Manager/Super Admin)"
+        parameters:
+          - name: courseId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Course dinonaktifkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Course berhasil dinonaktifkan."
+    # ─── TRAINING SESSIONS (ROLEPLAY CHAT) ─────────────────────────────────────
+    /api/sessions/start:
+      post:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Memulai Sesi Roleplay Latihan Baru"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId]
+                properties:
+                  courseId:
+                    type: string
+                    format: uuid
+                  assignmentId:
+                    type: string
+                    format: uuid
+                    description: ID assignment terkait untuk mengubah status menjadi in_progress
+        responses:
+          '201':
+            description: Sesi dibuat, mengembalikan opening statement dari AI
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    session:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        courseId:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          example: "active"
+                        maxTurns:
+                          type: integer
+                          example: 15
+                    openingMessage:
+                      type: string
+                      example: "Halo, saya Pak Arief. Ada keperluan apa ya menelepon?"
+                    initialCoaching:
+                      $ref: '#/components/schemas/CoachingHint'
+                    customerState:
+                      $ref: '#/components/schemas/CustomerState'
+    /api/sessions/chat:
+      post:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mengirimkan pesan/percakapan sales rep"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId, message]
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+                    example: "Selamat siang Pak Arief, saya dari HRSmart Pro ingin menawarkan integrasi sistem payroll otomatis."
+        responses:
+          '200':
+            description: Respons dari customer AI, metrik update, dan coaching hint
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    customerResponse:
+                      type: string
+                      example: "Payroll otomatis? Waduh, kami sudah kapok pakai software HR. Vendor sebelumnya gagal implementasi."
+                    postTurnCoaching:
+                      $ref: '#/components/schemas/CoachingHint'
+                    preTurnCoaching:
+                      $ref: '#/components/schemas/CoachingHint'
+                    customerState:
+                      $ref: '#/components/schemas/CustomerState'
+                    sessionMeta:
+                      type: object
+                      properties:
+                        shouldEnd:
+                          type: boolean
+                          example: false
+                        reason:
+                          type: string
+                          nullable: true
+                          example: null
+                        turnsRemaining:
+                          type: integer
+                          example: 14
+    /api/sessions/complete:
+      post:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Menyelesaikan Sesi Roleplay & Mengkalkulasi Laporan Evaluasi AI"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId]
+                properties:
+                  sessionId:
+                    type: string
+                    format: uuid
+                  facialAnalyses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FacialFrameInput'
+        responses:
+          '200':
+            description: Ringkasan hasil evaluasi dan rekomendasi
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    session:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          example: "completed"
+                        totalScore:
+                          type: integer
+                          example: 78
+                        outcome:
+                          type: string
+                          enum: [closed, follow_up, rejected]
+                          example: "follow_up"
+                    insightReport:
+                      $ref: '#/components/schemas/InsightReport'
+                    facialSummary:
+                      $ref: '#/components/schemas/FacialSummary'
+    /api/sessions/history:
+      get:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mendapatkan riwayat 20 sesi terakhir yang selesai (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Riwayat sesi
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    sessions:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          course:
+                            type: object
+                            properties:
+                              title:
+                                type: string
+                              category:
+                                type: string
+                              difficulty:
+                                type: string
+                          totalScore:
+                            type: integer
+                          outcome:
+                            type: string
+                          turnCount:
+                            type: integer
+                          completedAt:
+                            type: string
+                            format: date-time
+    /api/sessions/{sessionId}:
+      get:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mendapatkan detail lengkap kueri transkrip & insight suatu sesi"
+        parameters:
+          - name: sessionId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Detail sesi lengkap beserta transkrip percakapan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    session:
+                      $ref: '#/components/schemas/SessionDetailBase'
+                    insightReport:
+                      $ref: '#/components/schemas/InsightReport'
+                    facialSummary:
+                      $ref: '#/components/schemas/FacialSummary'
+                    transcript:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/TranscriptMessage'
+    # ─── TRAINING ASSIGNMENTS ──────────────────────────────────────────────────
+    /api/assignments:
+      get:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mendapatkan daftar tugas latihan yang didelegasikan ke user saat ini (Akses: Karyawan)"
+        responses:
+          '200':
+            description: List assignments
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    assignments:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Assignment'
+    /api/assignments/bulk:
+      post:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Meng-assign Course ke banyak Rep sekaligus (Akses: Manager/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [courseId, userIds]
+                properties:
+                  courseId:
+                    type: string
+                    format: uuid
+                  userIds:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                  dueAt:
+                    type: string
+                    format: date-time
+                  note:
+                    type: string
+                    example: "Tolong pelajari produk knowledge-nya terlebih dahulu."
+        responses:
+          '200':
+            description: Hasil delegasi massal
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AssignmentBase'
+    /api/assignments/{id}:
+      get:
+        tags:
+          - "Assignments (Penugasan)"
+        summary: "Mendapatkan detail penugasan spesifik beserta status dan sesi terkait (Akses: Karyawan pemilik/Manager/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Detail penugasan berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        courseId:
+                          type: string
+                          format: uuid
+                        userId:
+                          type: string
+                          format: uuid
+                        assignedById:
+                          type: string
+                          format: uuid
+                        note:
+                          type: string
+                          nullable: true
+                        status:
+                          type: string
+                          enum: [pending, in_progress, completed]
+                        dueAt:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                        completedAt:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        course:
+                          $ref: '#/components/schemas/CourseSummary'
+                        assignedBy:
+                          $ref: '#/components/schemas/User'
+                        session:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/SessionDetailBase'
+    /api/assignments/{id}/remind:
+      post:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mengirim notifikasi reminder manual ke Karyawan untuk tugas terkait (Akses: Manager/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Notifikasi terkirim
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: true
+                    message:
+                      type: string
+                      example: "Notifikasi reminder terkirim"
+    # ─── MANAGER MODULE ────────────────────────────────────────────────────────
+    /api/manager/dashboard:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan data dashboard manager (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Metrik ringkasan performa tim
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        teamCompletionRate:
+                          type: integer
+                          example: 75
+                        teamAvgScore:
+                          type: object
+                          properties:
+                            current:
+                              type: integer
+                              example: 82
+                            delta:
+                              type: integer
+                              example: 4
+                        activeSessions:
+                          type: integer
+                          example: 2
+                        dueDateAlerts:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              userName:
+                                type: string
+                              courseTitle:
+                                type: string
+                              dueAt:
+                                type: string
+                                format: date-time
+                        scoreDropAlerts:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              userId:
+                                type: string
+                              name:
+                                type: string
+                              latestScore:
+                                type: integer
+                              averagePrevious:
+                                type: integer
+                              drop:
+                                type: integer
+                        top3Ranking:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/LeaderboardRow'
+    /api/manager/team:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan list karyawan beserta skor SAW & performa (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Daftar karyawan tim
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          name:
+                            type: string
+                          sawScore:
+                            type: number
+                            example: 0.875
+                          sawRank:
+                            type: integer
+                            nullable: true
+                            example: 1
+                          avgScore:
+                            type: integer
+                            example: 81
+                          completionRate:
+                            type: integer
+                            example: 100
+                          lastActive:
+                            type: string
+                            format: date-time
+                            nullable: true
+    /api/manager/team/{userId}:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan detail profil & performa bulanan karyawan spesifik (Akses: Manager/Super Admin)"
+        parameters:
+          - name: userId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Metrik detail performa karyawan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        profile:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            email:
+                              type: string
+                            createdAt:
+                              type: string
+                        sawDetail:
+                          type: object
+                          properties:
+                            userId:
+                              type: string
+                            criteriaValues:
+                              type: object
+                            normalizedValues:
+                              type: object
+                            sawScore:
+                              type: number
+                            rank:
+                              type: integer
+                        trend30Days:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              sessionId:
+                                type: string
+                              score:
+                                type: integer
+                              completedAt:
+                                type: string
+                                format: date-time
+                        recentSessions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              courseTitle:
+                                type: string
+                              score:
+                                type: integer
+                              outcome:
+                                type: string
+                              completedAt:
+                                type: string
+    /api/manager/team/{userId}/sessions:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan seluruh sesi latihan karyawan tertentu (Akses: Manager/Super Admin)"
+        parameters:
+          - name: userId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+          - name: courseId
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: outcome
+            in: query
+            required: false
+            schema:
+              type: string
+        responses:
+          '200':
+            description: Daftar sesi
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/ManagerSessionItem'
+    /api/manager/team/{userId}/assignments:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan seluruh penugasan karyawan tertentu (Akses: Manager/Super Admin)"
+        parameters:
+          - name: userId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Daftar assignment
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          courseTitle:
+                            type: string
+                          status:
+                            type: string
+                          dueAt:
+                            type: string
+                          completedAt:
+                            type: string
+    /api/manager/sessions/{sessionId}:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan detail audit sesi (termasuk transkrip lengkap) untuk dipantau manager (Akses: Manager/Super Admin)"
+        parameters:
+          - name: sessionId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Sesi detail beserta transkrip
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/ManagerAuditSessionDetail'
+    /api/manager/analytics/overview:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan overview analisis performa global perusahaan (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Metrik perbandingan bulan lalu vs bulan ini
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        overview:
+                          type: object
+                          properties:
+                            avgScore:
+                              type: integer
+                            outcomeRate:
+                              type: integer
+                            completionRate:
+                              type: integer
+                        comparison:
+                          type: object
+                          properties:
+                            avgScore:
+                              type: integer
+                            outcomeRate:
+                              type: integer
+                            completionRate:
+                              type: integer
+                        sessionsPerDay:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              date:
+                                type: string
+                              count:
+                                type: integer
+    /api/manager/analytics/leaderboard:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan list leaderboard SAW bulanan terlengkap (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Leaderboard SAW
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    leaderboard:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/LeaderboardRow'
+    /api/manager/analytics/courses:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan analisis keefektifan course skenario (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Metrik detail performa tiap course
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        courses:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/CourseAnalyticsItem'
+                        hardestCourse:
+                          $ref: '#/components/schemas/CourseAnalyticsItem'
+                        mostAbandoned:
+                          $ref: '#/components/schemas/CourseAnalyticsItem'
+    /api/manager/analytics/trends:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan data grafik tren penyelesaian & DAU mingguan (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Data tren
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        weeklyTrends:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              week:
+                                type: string
+                              avgScore:
+                                type: integer
+                              outcomeRate:
+                                type: integer
+                        activeUsersPerDay:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              date:
+                                type: string
+                              activeUsers:
+                                type: integer
+    /api/manager/analytics/weaknesses:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan rekomendasi training berdasarkan area kelemahan tim (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Deteksi kelemahan kategori & saran course
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        weaknesses:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              category:
+                                type: string
+                              avgScore:
+                                type: integer
+                              weakPercentage:
+                                type: integer
+                        recommendedCourses:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              title:
+                                type: string
+                              difficulty:
+                                type: string
+    /api/manager/leaderboard/config:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan konfigurasi bobot kriteria SAW saat ini (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: Konfigurasi bobot SAW
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/SAWConfig'
+      patch:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Memperbarui bobot kriteria penilaian SAW (Akses: Manager/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SAWConfigInput'
+        responses:
+          '200':
+            description: Konfigurasi berhasil diperbarui
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/SAWConfig'
+    # ─── ADMIN & SYSTEM CONTROL MODULE ─────────────────────────────────────────
+    /api/admin/dashboard:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan dashboard monitor admin (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Indikator kesehatan & volume sistem
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        totalUsers:
+                          type: integer
+                        totalSessionsToday:
+                          type: integer
+                        avgScoreGlobal:
+                          type: integer
+                        totalCourses:
+                          type: integer
+                        estimatedAiCost:
+                          type: number
+                        alerts:
+                          type: object
+                          properties:
+                            stuckSessions:
+                              type: integer
+                            errorRate:
+                              type: number
+    /api/admin/users:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan daftar user di database (Akses: Admin/Super Admin)"
+        parameters:
+          - name: role
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: search
+            in: query
+            required: false
+            schema:
+              type: string
+        responses:
+          '200':
+            description: List user
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AdminUserItem'
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Membuat akun user baru secara manual (Akses: Admin/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, email, role, password]
+                properties:
+                  name:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+                  role:
+                    type: string
+                    enum: [karyawan, manager, admin, super_admin]
+                  password:
+                    type: string
+                    minLength: 6
+                  isActive:
+                    type: boolean
+        responses:
+          '201':
+            description: User dibuat
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/User'
+    /api/admin/users/{id}:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan profil audit user spesifik (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Profil lengkap
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        profile:
+                          $ref: '#/components/schemas/AdminUserItem'
+                        sawGlobalRank:
+                          type: object
+                          nullable: true
+      patch:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mengedit data profil/role user (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+                    enum: [karyawan, manager, admin, super_admin]
+                  isActive:
+                    type: boolean
+        responses:
+          '200':
+            description: User terupdate
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/AdminUserItem'
+      delete:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menonaktifkan akun user (Soft Delete) (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Akun dinonaktifkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        isActive:
+                          type: boolean
+                    message:
+                      type: string
+                      example: "User di-soft delete"
+    /api/admin/users/{id}/reset-password:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mereset password user menjadi password acak sementara (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Password berhasil di-generate ulang
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        tempPassword:
+                          type: string
+                          example: "x8f2kd9a"
+                    message:
+                      type: string
+    /api/admin/courses:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan data audit seluruh course (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Daftar course sistem
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          title:
+                            type: string
+                          category:
+                            type: string
+                          isActive:
+                            type: boolean
+                          createdBy:
+                            type: object
+                            properties:
+                              name:
+                                type: string
+    /api/admin/courses/{id}/force-deactivate:
+      patch:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Paksa menonaktifkan course tertentu (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Status deaktif berhasil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        isActive:
+                          type: boolean
+    /api/admin/sessions:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Memantau dan mengaudit daftar seluruh sesi (Akses: Admin/Super Admin)"
+        parameters:
+          - name: userId
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: courseId
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: status
+            in: query
+            required: false
+            schema:
+              type: string
+        responses:
+          '200':
+            description: Daftar sesi sistem
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AdminSessionAuditItem'
+    /api/admin/system/health:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mengecek status kesehatan integrasi sistem (Prisma, Cerebras AI, RAG) (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Sistem status
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        db:
+                          type: string
+                          example: "ok"
+                        cerebras:
+                          type: string
+                          example: "ok"
+                        pgvector:
+                          type: string
+                          example: "ok"
+                        avgResponseTime:
+                          type: integer
+                          example: 450
+                        errorRate:
+                          type: number
+                          example: 0.05
+    /api/admin/system/abandoned-sessions:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan daftar sesi yang menggantung/idle lebih dari 2 jam (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: List sesi idle
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/SessionDetailBase'
+    /api/admin/system/cleanup-sessions:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mengubah status seluruh sesi idle > 2 jam menjadi 'abandoned' (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Eksekusi selesai
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "12 sesi diubah menjadi abandoned."
+    /api/admin/system/reindex-rag:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menjalankan ulang kueri re-index dokumen RAG di background (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Reindexing berjalan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Reindexing dimulai di background."
+    /api/admin/notifications/broadcast:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mengirimkan notifikasi broadcast ke seluruh/sebagian peran user (Akses: Admin/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [title, message]
+                properties:
+                  title:
+                    type: string
+                    example: "Pemeliharaan Sistem Malam Ini"
+                  message:
+                    type: string
+                    example: "Sistem akan dimaintenance pada pukul 23:00 WIB selama 1 jam."
+                  targetRole:
+                    type: string
+                    enum: [karyawan, manager]
+                    description: Kosongkan untuk kirim ke seluruh user aktif.
+        responses:
+          '200':
+            description: Broadcast terkirim
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Broadcast dikirim ke 15 user."
+    # ─── FACIAL ANALYSIS ───────────────────────────────────────────────────────
+    /api/facial/analyze:
+      post:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Menganalisis ekspresi frame kamera untuk real-time feedback (Akses: Karyawan)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [frameData]
+                properties:
+                  frameData:
+                    type: string
+                    description: Base64 string dari frame canvas webcam
+                    example: "data:image/jpeg;base64,..."
+        responses:
+          '200':
+            description: Hasil deteksi ekspresi & kontak mata
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    expression:
+                      type: string
+                      example: "happy"
+                    confidence:
+                      type: number
+                      example: 0.92
+                    eyeContact:
+                      type: boolean
+                      example: true
+                    note:
+                      type: string
+                      example: "Kontak mata terdeteksi dengan baik."
+
+    # ─── USER PROFILE & PERSONAL DASHBOARD ─────────────────────────────────────
+    /api/profile:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan profil kustomisasi latihan (Training Profile) user saat ini (Akses: Semua Role)"
+        responses:
+          '200':
+            description: Profil berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/TrainingProfile'
+                      nullable: true
+      put:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Memperbarui atau membuat profil kustomisasi latihan (Training Profile) user saat ini (Akses: Semua Role)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingProfileInput'
+        responses:
+          '200':
+            description: Profil berhasil disimpan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/TrainingProfile'
+
+    /api/me:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan data akun & profil kustomisasi latihan user saat ini (Akses: Semua Role)"
+        responses:
+          '200':
+            description: Data berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      allOf:
+                        - $ref: '#/components/schemas/User'
+                        - type: object
+                          properties:
+                            profile:
+                              $ref: '#/components/schemas/TrainingProfile'
+                              nullable: true
+      patch:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mengupdate informasi nama pengguna (Akses: Semua Role)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: "Budi Santoso Baru"
+        responses:
+          '200':
+            description: Nama berhasil diperbarui
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      $ref: '#/components/schemas/User'
+
+    /api/me/password:
+      patch:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mengubah password pengguna saat ini (Akses: Semua Role)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - oldPassword
+                  - newPassword
+                properties:
+                  oldPassword:
+                    type: string
+                    example: "password123"
+                  newPassword:
+                    type: string
+                    example: "newpassword456"
+        responses:
+          '200':
+            description: Password berhasil diubah
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Password updated successfully."
+
+    /api/me/dashboard:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan ringkasan statistik dan tugas penugasan personal karyawan (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Data dashboard personal berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        pendingAssignments:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              courseTitle:
+                                type: string
+                              difficulty:
+                                type: string
+                              category:
+                                type: string
+                              status:
+                                type: string
+                              dueAt:
+                                type: string
+                                format: date-time
+                                nullable: true
+                        avgScoreThisWeek:
+                          type: integer
+                          nullable: true
+                          example: 85
+                        rankingPosition:
+                          type: integer
+                          nullable: true
+                          example: 3
+                        lastSession:
+                          type: object
+                          nullable: true
+                          properties:
+                            courseTitle:
+                              type: string
+                            score:
+                              type: integer
+                            outcome:
+                              type: string
+                            completedAt:
+                              type: string
+                              format: date-time
+                              nullable: true
+                        streakDays:
+                          type: integer
+                          example: 5
+
+    /api/me/stats:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan statistik performa latihan personal lengkap (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Statistik personal berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        totalSessions:
+                          type: integer
+                        avgScore:
+                          type: integer
+                        bestScore:
+                          type: integer
+                        outcomeRate:
+                          type: object
+                          properties:
+                            closed:
+                              type: integer
+                            follow_up:
+                              type: integer
+                            rejected:
+                              type: integer
+                        completionRate:
+                          type: integer
+                        improvementRate:
+                          type: integer
+                        deadlineRate:
+                          type: integer
+                        sawScore:
+                          type: number
+                        sawRank:
+                          type: integer
+                          nullable: true
+                        sawBreakdown:
+                          type: object
+                          nullable: true
+
+    /api/me/progress:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan grafik historis kemajuan skor dan tren kategori (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Historis progress berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        scores:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              sessionId:
+                                type: string
+                                format: uuid
+                              score:
+                                type: integer
+                              outcome:
+                                type: string
+                              completedAt:
+                                type: string
+                                format: date-time
+                                nullable: true
+                        categoryTrends:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              category:
+                                type: string
+                              months:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    month:
+                                      type: string
+                                      example: "2026-05"
+                                    avgScore:
+                                      type: integer
+                        improvementChart:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              sessionIndex:
+                                type: integer
+                              rollingAvg:
+                                type: integer
+
+    /api/me/strengths:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan kelebihan, kelemahan, dan rekomendasi course personal (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Kelebihan & rekomendasi berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        strongest:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              category:
+                                type: string
+                              avgScore:
+                                type: integer
+                              sampleCount:
+                                type: integer
+                        weakest:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              category:
+                                type: string
+                              avgScore:
+                                type: integer
+                              sampleCount:
+                                type: integer
+                        recommendedCourses:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                              title:
+                                type: string
+                              difficulty:
+                                type: string
+                              category:
+                                type: string
+
+    # ─── NOTIFICATIONS ────────────────────────────────────────────────────────
+    /api/notifications:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan daftar notifikasi user yang login (max 50, terbaru duluan)"
+        parameters:
+          - name: isRead
+            in: query
+            required: false
+            schema:
+              type: boolean
+            description: "Filter status baca (opsional)"
+        responses:
+          '200':
+            description: Daftar notifikasi berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    notifications:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Notification'
+                    unreadCount:
+                      type: integer
+                      example: 5
+
+    /api/notifications/unread-count:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan jumlah notifikasi yang belum dibaca (untuk badge bell icon)"
+        responses:
+          '200':
+            description: Jumlah notifikasi belum dibaca
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    count:
+                      type: integer
+                      example: 3
+
+    /api/notifications/read-all:
+      patch:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Menandai semua notifikasi user sebagai sudah dibaca"
+        responses:
+          '200':
+            description: Berhasil menandai semua notifikasi
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Semua notifikasi berhasil ditandai sebagai dibaca."
+                    updatedCount:
+                      type: integer
+                      example: 10
+
+    /api/notifications/{id}/read:
+      patch:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Menandai satu notifikasi spesifik sebagai sudah dibaca"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+            description: "ID Notifikasi"
+        responses:
+          '200':
+            description: Notifikasi berhasil ditandai sebagai dibaca
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    notification:
+                      $ref: '#/components/schemas/Notification'
+
+    # ─── SESSIONS — RETRY ──────────────────────────────────────────────────────
+    /api/sessions/{sessionId}/retry:
+      post:
+        tags:
+          - "Karyawan (Sales Rep)"
+        summary: "Mengulang course yang sama dari sesi yang sudah selesai (Akses: Karyawan)"
+        parameters:
+          - name: sessionId
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+            description: "ID sesi yang bertipe completed"
+        responses:
+          '201':
+            description: Sesi baru berhasil di-retry, mengembalikan data sesi baru
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    session:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        courseId:
+                          type: string
+                          format: uuid
+                        status:
+                          type: string
+                          example: "active"
+                        maxTurns:
+                          type: integer
+                          example: 15
+                    openingMessage:
+                      type: string
+                      example: "Halo, saya Pak Arief. Ada keperluan apa ya menelepon?"
+                    initialCoaching:
+                      $ref: '#/components/schemas/CoachingHint'
+                    customerState:
+                      $ref: '#/components/schemas/CustomerState'
+
+    # ─── ME ENDPOINTS BARU ─────────────────────────────────────────────────────
+    /api/me/stats/weekly:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan statistik mingguan dan delta perbandingan minggu ini vs minggu lalu (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Statistik mingguan berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    thisWeek:
+                      type: object
+                      properties:
+                        avgScore:
+                          type: integer
+                          example: 80
+                        totalSessions:
+                          type: integer
+                          example: 5
+                        closedCount:
+                          type: integer
+                          example: 2
+                        followUpCount:
+                          type: integer
+                          example: 2
+                        rejectedCount:
+                          type: integer
+                          example: 1
+                    lastWeek:
+                      type: object
+                      properties:
+                        avgScore:
+                          type: integer
+                          example: 75
+                        totalSessions:
+                          type: integer
+                          example: 4
+                        closedCount:
+                          type: integer
+                          example: 1
+                    delta:
+                      type: object
+                      properties:
+                        avgScore:
+                          type: integer
+                          example: 5
+                        sessions:
+                          type: integer
+                          example: 1
+                        trend:
+                          type: string
+                          enum: [up, down, stable]
+                          example: "up"
+
+    /api/me/badges:
+      get:
+        tags:
+          - "User Profile & Dashboard"
+        summary: "Mendapatkan daftar badge yang sudah diraih dan yang belum (Akses: Karyawan)"
+        responses:
+          '200':
+            description: Daftar badge berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    earned:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/UserBadge'
+                    available:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Badge'
+                    totalEarned:
+                      type: integer
+                      example: 3
+                    totalAvailable:
+                      type: integer
+                      example: 7
+
+    # ─── ADMIN — SYSTEM INFO ───────────────────────────────────────────────────
+    /api/admin/system/info:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan informasi runtime server, memory, database, dan konfigurasi AI (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Informasi sistem berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    app:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                          example: "sales-ai-coach-backend"
+                        version:
+                          type: string
+                          example: "1.0.0"
+                        nodeVersion:
+                          type: string
+                          example: "v22.15.0"
+                        env:
+                          type: string
+                          example: "development"
+                        uptime:
+                          type: number
+                          example: 1234.56
+                    memory:
+                      type: object
+                      properties:
+                        rss:
+                          type: number
+                          example: 120.5
+                        heapUsed:
+                          type: number
+                          example: 85.3
+                        heapTotal:
+                          type: number
+                          example: 110.2
+                    database:
+                      type: object
+                      properties:
+                        status:
+                          type: string
+                          example: "connected"
+                        provider:
+                          type: string
+                          example: "postgresql"
+                        pooling:
+                          type: boolean
+                          example: true
+                    ai:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                          example: "cerebras"
+                        defaultModel:
+                          type: string
+                          example: "llama3.1-8b"
+                        apiKeyConfigured:
+                          type: boolean
+                          example: true
+                    timestamp:
+                      type: string
+                      format: date-time
+                      example: "2026-05-20T02:31:30.000Z"
+
+    # ─── ADMIN — TOKEN USAGE ───────────────────────────────────────────────────
+    /api/admin/token-usage:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan data penggunaan token AI secara riil (Akses: Admin/Super Admin)"
+        parameters:
+          - name: from
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: model
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: groupBy
+            in: query
+            required: false
+            schema:
+              type: string
+              enum: [day, model]
+        responses:
+          '200':
+            description: Data penggunaan token berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    summary:
+                      type: object
+                      properties:
+                        totalTokens:
+                          type: integer
+                          example: 15000
+                        totalPromptTokens:
+                          type: integer
+                          example: 12000
+                        totalCompletionTokens:
+                          type: integer
+                          example: 3000
+                        totalRequests:
+                          type: integer
+                          example: 50
+                    byModel:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          model:
+                            type: string
+                            example: "llama3.1-8b"
+                          totalTokens:
+                            type: integer
+                            example: 10000
+                          requests:
+                            type: integer
+                            example: 30
+                          avgTokensPerRequest:
+                            type: integer
+                            example: 333
+                    byDay:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          date:
+                            type: string
+                            format: date
+                            example: "2026-05-20"
+                          totalTokens:
+                            type: integer
+                            example: 5000
+                          requests:
+                            type: integer
+                            example: 15
+                    byService:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          service:
+                            type: string
+                            example: "roleplay"
+                          totalTokens:
+                            type: integer
+                            example: 8000
+                          requests:
+                            type: integer
+                            example: 25
+
+    /api/admin/token-usage/cost:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan estimasi biaya penggunaan AI berdasarkan harga Cerebras (Akses: Admin/Super Admin)"
+        parameters:
+          - name: from
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+        responses:
+          '200':
+            description: Estimasi biaya penggunaan token berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    totalEstimatedUSD:
+                      type: number
+                      example: 0.054
+                    byModel:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          model:
+                            type: string
+                            example: "llama3.1-8b"
+                          promptTokens:
+                            type: integer
+                            example: 10000
+                          completionTokens:
+                            type: integer
+                            example: 2000
+                          estimatedUSD:
+                            type: number
+                            example: 0.0012
+
+    # ─── ADMIN — AI API KEYS ───────────────────────────────────────────────────
+    /api/admin/ai-keys:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan daftar AI API Key yang terdaftar (keyPreview only, key asli tidak ditampilkan) (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Daftar AI API Key berhasil didapatkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    keys:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AiApiKey'
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menambahkan AI API Key baru (Akses: Admin/Super Admin)"
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, label, apiKey]
+                properties:
+                  provider:
+                    type: string
+                    enum: [cerebras, openai, groq]
+                    example: "cerebras"
+                  label:
+                    type: string
+                    example: "Cerebras Production Key"
+                  apiKey:
+                    type: string
+                    example: "csk-e9k8a..."
+        responses:
+          '201':
+            description: AI API Key berhasil ditambahkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    key:
+                      $ref: '#/components/schemas/AiApiKey'
+
+    /api/admin/ai-keys/{id}:
+      patch:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mengubah label atau status aktif AI API Key (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  label:
+                    type: string
+                    example: "New Label"
+                  isActive:
+                    type: boolean
+                    example: false
+        responses:
+          '200':
+            description: AI API Key berhasil diperbarui
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    key:
+                      $ref: '#/components/schemas/AiApiKey'
+      delete:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menonaktifkan AI API Key (soft delete) (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: AI API Key berhasil dinonaktifkan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "API Key berhasil dinonaktifkan"
+
+    /api/admin/ai-keys/{id}/test:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menguji konektivitas AI API Key dengan call dummy ke provider (Akses: Admin/Super Admin)"
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema:
+              type: string
+              format: uuid
+        responses:
+          '200':
+            description: Pengujian API Key berhasil dilakukan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: true
+                    latencyMs:
+                      type: integer
+                      example: 450
+                    message:
+                      type: string
+                      example: "Key is valid and working."
+
+    # ─── ADMIN — AUDIT LOG ─────────────────────────────────────────────────────
+    /api/admin/audit-logs:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Mendapatkan log aktivitas admin dengan pagination (Akses: Admin/Super Admin)"
+        parameters:
+          - name: actorId
+            in: query
+            required: false
+            schema:
+              type: string
+              format: uuid
+          - name: action
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: targetType
+            in: query
+            required: false
+            schema:
+              type: string
+          - name: from
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: page
+            in: query
+            required: false
+            schema:
+              type: integer
+              default: 1
+          - name: limit
+            in: query
+            required: false
+            schema:
+              type: integer
+              default: 50
+        responses:
+          '200':
+            description: Log aktivitas admin berhasil diambil
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    logs:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/AuditLog'
+                    total:
+                      type: integer
+                      example: 100
+                    page:
+                      type: integer
+                      example: 1
+                    totalPages:
+                      type: integer
+                      example: 2
+
+    # ─── ADMIN — BADGES SEED ───────────────────────────────────────────────────
+    /api/admin/badges/seed:
+      post:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Menjalankan seed/upsert definisi badge ke database (Akses: Admin/Super Admin)"
+        responses:
+          '200':
+            description: Badges seeded successfully
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    message:
+                      type: string
+                      example: "Badges seeded successfully"
+                    count:
+                      type: integer
+                      example: 10
+
+    # ─── CSV EXPORT ────────────────────────────────────────────────────────────
+    /api/admin/sessions/export:
+      get:
+        tags:
+          - "Admin (System Administrator)"
+          - "Super Admin (Owner)"
+        summary: "Export seluruh riwayat sesi ke file CSV (Akses: Admin/Super Admin)"
+        parameters:
+          - name: from
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: to
+            in: query
+            required: false
+            schema:
+              type: string
+              format: date-time
+          - name: userId
+            in: query
+            required: false
+            schema:
+              type: string
+              format: uuid
+          - name: courseId
+            in: query
+            required: false
+            schema:
+              type: string
+              format: uuid
+          - name: status
+            in: query
+            required: false
+            schema:
+              type: string
+        responses:
+          '200':
+            description: File CSV berhasil di-generate
+            content:
+              text/csv:
+                schema:
+                  type: string
+                  format: binary
+
+    /api/manager/team/export:
+      get:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Super Admin (Owner)"
+        summary: "Export data performa tim sales ke file CSV (Akses: Manager/Super Admin)"
+        responses:
+          '200':
+            description: File CSV berhasil di-generate
+            content:
+              text/csv:
+                schema:
+                  type: string
+                  format: binary
+
+
+    # ─── TTS ──────────────────────────────────────────────────────────────────
+    /api/tts/synthesize:
+      post:
+        tags:
+          - "TTS (Text-to-Speech)"
+        summary: Synthesize text to speech
+        description: Converts text to audio using local Supertonic TTS model. Returns audio/wav stream.
+        security: []
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+                    minLength: 1
+                    example: "Halo, saya siap membantu Anda."
+                  voice:
+                    type: string
+                    enum: [M1, M2, M3, M4, M5, F1, F2, F3]
+                    default: M1
+                    example: "M1"
+        responses:
+          '200':
+            description: Audio WAV stream
+            content:
+              audio/wav:
+                schema:
+                  type: string
+                  format: binary
+          '400':
+            description: Bad request
+          '500':
+            description: TTS synthesis failed
+
+    /api/tts/voices:
+      get:
+        tags:
+          - "TTS (Text-to-Speech)"
+        summary: Get available voices
+        security: []
+        responses:
+          '200':
+            description: List of available voices
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    voices:
+                      type: array
+                      items:
+                        type: string
+                      example: [M1, M2, M3, M4, M5, F1, F2, F3]
+    
+    # ─── AI GENERATOR ────────────────────────────────────────────────────────
+    /api/ai/generate-course:
+      post:
+        tags:
+          - "Manager (Sales Manager)"
+        summary: "Auto Generate Course dari Brief"
+        description: "Menggenerate konfigurasi course lengkap beserta persona dan detail produk berdasarkan brief singkat."
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [brief]
+                properties:
+                  brief:
+                    type: string
+                    example: "Saya menjual asuransi kesehatan untuk keluarga muda"
+        responses:
+          '200':
+            description: Berhasil generate course
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    course:
+                      type: object
+                      description: "Berisi field course lengkap hasil generate LLM"
+    
+    /api/ai/generate-company-context:
+      post:
+        tags:
+          - "Manager (Sales Manager)"
+          - "Authentication"
+        summary: "Auto Generate Company Context"
+        description: "Mengekstrak profil perusahaan dari URL website (via Scrapling Python) atau dari brief pendek untuk mengisi data Onboarding."
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    example: "https://maxy.academy"
+                  brief:
+                    type: string
+                    example: "Startup edutech bootcamp"
+        responses:
+          '200':
+            description: Berhasil ekstrak konteks perusahaan
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    context:
+                      type: object
+                      properties:
+                        description:
+                          type: string
+                        coreProducts:
+                          type: string
+                        targetAudience:
+                          type: string
+                        usp:
+                          type: string
+                        commonObjections:
+                          type: string
+                        brandTone:
+                          type: string
+  components:
+    securitySchemes:
+      BearerAuth:
+        type: http
+        scheme: bearer
+        bearerFormat: JWT
+    schemas:
+      TrainingProfile:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+          companyName:
+            type: string
+          industry:
+            type: string
+          product:
+            type: string
+          targetCustomer:
+            type: string
+          salesRole:
+            type: string
+          mainChallenge:
+            type: string
+          focusAreas:
+            type: array
+            items:
+              type: string
+          createdAt:
+            type: string
+            format: date-time
+          updatedAt:
+            type: string
+            format: date-time
+      TrainingProfileInput:
+        type: object
+        required:
+          - companyName
+          - industry
+          - product
+          - targetCustomer
+          - salesRole
+          - mainChallenge
+          - focusAreas
+        properties:
+          companyName:
+            type: string
+            example: "PT Maju Bersama"
+          industry:
+            type: string
+            example: "SaaS / Teknologi"
+          product:
+            type: string
+            example: "CRM Platform"
+          targetCustomer:
+            type: string
+            example: "B2B Enterprise"
+          salesRole:
+            type: string
+            example: "Account Executive"
+          mainChallenge:
+            type: string
+            example: "Menghadapi objection harga tinggi"
+          focusAreas:
+            type: array
+            items:
+              type: string
+            example: ["Objection Handling", "Closing Techniques"]
+      AuthResponse:
+        type: object
+        properties:
+          token:
+            type: string
+            example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          user:
+            $ref: '#/components/schemas/User'
+      User:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          name:
+            type: string
+            example: "Budi Santoso"
+          email:
+            type: string
+            format: email
+            example: "demo@salescoach.ai"
+          role:
+            type: string
+            enum: [karyawan, manager, admin, super_admin]
+            example: "karyawan"
+      CourseSummary:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          title:
+            type: string
+          description:
+            type: string
+          difficulty:
+            type: string
+            enum: [Beginner, Intermediate, Advanced]
+          category:
+            type: string
+          personaName:
+            type: string
+          productName:
+            type: string
+          aiModelSize:
+            type: string
+          maxTurns:
+            type: integer
+          createdAt:
+            type: string
+            format: date-time
+          createdBy:
+            type: object
+            properties:
+              name:
+                type: string
+          rubric:
+            type: object
+            properties:
+              passingScore:
+                type: integer
+          _count:
+            type: object
+            properties:
+              sessions:
+                type: integer
+      CourseDetail:
+        allOf:
+          - $ref: '#/components/schemas/Course'
+          - type: object
+            properties:
+              rubric:
+                $ref: '#/components/schemas/ScoringRubric'
+              createdBy:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  email:
+                    type: string
+              _count:
+                type: object
+                properties:
+                  sessions:
+                    type: integer
+                  assignments:
+                    type: integer
+      Course:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          createdById:
+            type: string
+            format: uuid
+          title:
+            type: string
+          description:
+            type: string
+          difficulty:
+            type: string
+          category:
+            type: string
+          isActive:
+            type: boolean
+          createdAt:
+            type: string
+            format: date-time
+          updatedAt:
+            type: string
+            format: date-time
+          personaName:
+            type: string
+          personaRole:
+            type: string
+          personaBackground:
+            type: string
+          personaPainPoints:
+            type: string
+          personaObjections:
+            type: string
+          personaBuyingSignals:
+            type: string
+          personaPersonality:
+            type: string
+          productName:
+            type: string
+          productDescription:
+            type: string
+          productStrengths:
+            type: string
+          competitorNotes:
+            type: string
+            nullable: true
+          scenarioContext:
+            type: string
+          idealOutcome:
+            type: string
+          aiModelSize:
+            type: string
+          aiTemperature:
+            type: number
+          maxTurns:
+            type: integer
+      CreateCourseInput:
+        type: object
+        required:
+          - title
+          - description
+          - difficulty
+          - category
+          - personaName
+          - personaRole
+          - personaBackground
+          - personaPainPoints
+          - personaObjections
+          - personaBuyingSignals
+          - personaPersonality
+          - productName
+          - productDescription
+          - productStrengths
+          - scenarioContext
+          - idealOutcome
+        properties:
+          title:
+            type: string
+          description:
+            type: string
+          difficulty:
+            type: string
+            enum: [Beginner, Intermediate, Advanced]
+          category:
+            type: string
+          personaName:
+            type: string
+          personaRole:
+            type: string
+          personaBackground:
+            type: string
+          personaPainPoints:
+            type: string
+          personaObjections:
+            type: string
+          personaBuyingSignals:
+            type: string
+          personaPersonality:
+            type: string
+          productName:
+            type: string
+          productDescription:
+            type: string
+          productStrengths:
+            type: string
+          competitorNotes:
+            type: string
+          scenarioContext:
+            type: string
+          idealOutcome:
+            type: string
+          aiModelSize:
+            type: string
+            enum: ["1.2b", "3b", "7b", "20b"]
+            default: "7b"
+          aiTemperature:
+            type: number
+            minimum: 0
+            maximum: 1
+            default: 0.3
+          maxTurns:
+            type: integer
+            minimum: 5
+            maximum: 50
+            default: 20
+          rubric:
+            type: object
+            properties:
+              passingScore:
+                type: integer
+                default: 70
+              categories:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RubricCategoryInput'
+      RubricCategoryInput:
+        type: object
+        required: [name, weight, criteria]
+        properties:
+          name:
+            type: string
+          weight:
+            type: number
+          criteria:
+            type: array
+            items:
+              type: object
+              required: [label, score]
+              properties:
+                label:
+                  type: string
+                score:
+                  type: number
+      ScoringRubric:
+        type: object
+        properties:
+          id:
+            type: string
+          courseId:
+            type: string
+          passingScore:
+            type: integer
+          categories:
+            type: array
+            items:
+              type: object
+      CustomerState:
+        type: object
+        properties:
+          trustLevel:
+            type: number
+            example: 2.5
+          stage:
+            type: string
+            enum: [cold, warm, hot, decided]
+            example: "cold"
+          mood:
+            type: string
+            enum: [neutral, skeptical, interested, annoyed, happy]
+            example: "neutral"
+          objectionCount:
+            type: integer
+            example: 0
+          turnCount:
+            type: integer
+            example: 1
+      CoachingHint:
+        type: object
+        properties:
+          evaluation:
+            type: string
+            example: "Pernyataan pembuka Anda kurang menanyakan ketersediaan waktu."
+          suggested_phrase:
+            type: string
+            example: "Apakah Bapak sedang ada waktu luang 5 menit untuk berdiskusi?"
+          why:
+            type: string
+            example: "Menanyakan waktu luang menunjukkan rasa hormat terhadap waktu customer yang sibuk."
+          urgency:
+            type: string
+            enum: [low, medium, high]
+            example: "medium"
+      InsightReport:
+        type: object
+        properties:
+          totalScore:
+            type: integer
+            example: 80
+          outcome:
+            type: string
+            enum: [closed, follow_up, rejected]
+            example: "closed"
+          narrative:
+            type: string
+            example: "Anda berhasil membangun impresi awal yang baik dan merespons keberatan dengan fakta konkret. Pitch Anda sangat meyakinkan."
+          categoryScores:
+            type: array
+            items:
+              type: object
+              properties:
+                category:
+                  type: string
+                  example: "Discovery"
+                score:
+                  type: integer
+                  example: 85
+                comment:
+                  type: string
+                  example: "Discovery baik, tetapi Anda bisa menggali pain point absensi manual lebih dalam."
+          keyMoments:
+            type: array
+            items:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [strength, weakness]
+                  example: "strength"
+                salesMessage:
+                  type: string
+                description:
+                  type: string
+          recommendations:
+            type: array
+            items:
+              type: string
+              example: "Tanyakan proses verifikasi data absensi mereka saat ini sebelum menawarkan fitur."
+      FacialFrameInput:
+        type: object
+        required: [expression, confidence, eyeContact, note]
+        properties:
+          expression:
+            type: string
+          confidence:
+            type: number
+          eyeContact:
+            type: boolean
+          note:
+            type: string
+      FacialSummary:
+        type: object
+        properties:
+          averageEyeContactPct:
+            type: number
+            example: 85.5
+          dominantExpression:
+            type: string
+            example: "happy"
+          expressionConfidence:
+            type: number
+            example: 0.78
+          overallMoodAssessment:
+            type: string
+            example: "Ekspresi dominan ceria dengan kontak mata stabil."
+      TranscriptMessage:
+        type: object
+        properties:
+          role:
+            type: string
+            enum: [user, assistant]
+          content:
+            type: string
+          coachingHint:
+            type: object
+            nullable: true
+          trustDelta:
+            type: number
+            nullable: true
+          facialData:
+            type: object
+            nullable: true
+          createdAt:
+            type: string
+            format: date-time
+      AssignmentBase:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+          courseId:
+            type: string
+            format: uuid
+          assignedById:
+            type: string
+            format: uuid
+          status:
+            type: string
+            enum: [pending, in_progress, completed]
+          note:
+            type: string
+            nullable: true
+          dueAt:
+            type: string
+            format: date-time
+            nullable: true
+          createdAt:
+            type: string
+            format: date-time
+          updatedAt:
+            type: string
+            format: date-time
+          completedAt:
+            type: string
+            format: date-time
+            nullable: true
+      Assignment:
+        allOf:
+          - $ref: '#/components/schemas/AssignmentBase'
+          - type: object
+            properties:
+              course:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  difficulty:
+                    type: string
+                  category:
+                    type: string
+              assignedBy:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+      LeaderboardRow:
+        type: object
+        properties:
+          rank:
+            type: integer
+            example: 1
+          userId:
+            type: string
+            format: uuid
+          userName:
+            type: string
+            example: "Mira Kusuma"
+          sawScore:
+            type: number
+            example: 0.912
+          rawValues:
+            type: object
+            properties:
+              avgScore:
+                type: number
+              dealClosedRate:
+                type: number
+              sessionsCount:
+                type: number
+              lastActiveDays:
+                type: number
+      SAWConfig:
+        type: object
+        properties:
+          w_avgScore:
+            type: number
+            example: 0.4
+          w_dealRate:
+            type: number
+            example: 0.3
+          w_sessions:
+            type: number
+            example: 0.2
+          w_recency:
+            type: number
+            example: 0.1
+          updatedAt:
+            type: string
+            format: date-time
+      SAWConfigInput:
+        type: object
+        required: [w_avgScore, w_dealRate, w_sessions, w_recency]
+        properties:
+          w_avgScore:
+            type: number
+            minimum: 0
+            maximum: 1
+          w_dealRate:
+            type: number
+            minimum: 0
+            maximum: 1
+          w_sessions:
+            type: number
+            minimum: 0
+            maximum: 1
+          w_recency:
+            type: number
+            minimum: 0
+            maximum: 1
+      AdminUserItem:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          name:
+            type: string
+          email:
+            type: string
+          role:
+            type: string
+          isActive:
+            type: boolean
+          createdAt:
+            type: string
+            format: date-time
+      AdminSessionAuditItem:
+        type: object
+        properties:
+          id:
+            type: string
+          status:
+            type: string
+          totalScore:
+            type: integer
+            nullable: true
+          outcome:
+            type: string
+            nullable: true
+          startedAt:
+            type: string
+            format: date-time
+          user:
+            type: object
+            properties:
+              name:
+                type: string
+              email:
+                type: string
+          course:
+            type: object
+            properties:
+              title:
+                type: string
+      ManagerSessionItem:
+        type: object
+        properties:
+          id:
+            type: string
+          courseTitle:
+            type: string
+          score:
+            type: integer
+            nullable: true
+          outcome:
+            type: string
+            nullable: true
+          turnCount:
+            type: integer
+          status:
+            type: string
+          completedAt:
+            type: string
+            nullable: true
+      ManagerAuditSessionDetail:
+        type: object
+        properties:
+          id:
+            type: string
+          userName:
+            type: string
+          courseTitle:
+            type: string
+          status:
+            type: string
+          totalScore:
+            type: integer
+            nullable: true
+          scoreBreakdown:
+            type: array
+            items:
+              type: object
+          feedbackReport:
+            type: object
+          facialSummary:
+            type: object
+          outcome:
+            type: string
+            nullable: true
+          trustLevel:
+            type: number
+          customerStage:
+            type: string
+          completedAt:
+            type: string
+            nullable: true
+          messages:
+            type: array
+            items:
+              type: object
+      SessionDetailBase:
+        type: object
+        properties:
+          id:
+            type: string
+          status:
+            type: string
+          course:
+            type: object
+            properties:
+              title:
+                type: string
+              category:
+                type: string
+              difficulty:
+                type: string
+          totalScore:
+            type: integer
+            nullable: true
+          outcome:
+            type: string
+            nullable: true
+          startedAt:
+            type: string
+            format: date-time
+          completedAt:
+            type: string
+            format: date-time
+            nullable: true
+          turnCount:
+            type: integer
+      CourseAnalyticsItem:
+        type: object
+        properties:
+          id:
+            type: string
+          title:
+            type: string
+          avgScore:
+            type: integer
+          outcomeRate:
+            type: integer
+          abandonRate:
+            type: integer
+          completionRate:
+            type: integer
+          totalSessions:
+            type: integer
+      Notification:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          userId:
+            type: string
+            format: uuid
+          title:
+            type: string
+            example: "Assignment Baru!"
+          message:
+            type: string
+            example: "Kamu mendapat assignment baru: Menjual Software HR"
+          type:
+            type: string
+            enum: [assignment, rank_up, reminder, broadcast, system, badge]
+            example: "assignment"
+          isRead:
+            type: boolean
+            example: false
+          metadata:
+            type: object
+            nullable: true
+          createdAt:
+            type: string
+            format: date-time
+      Badge:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          key:
+            type: string
+            enum: [first_session, first_close, perfect_score, streak_3, streak_7, comeback, top_3, sessions_10, sessions_50, objection_master]
+            example: "first_close"
+          name:
+            type: string
+            example: "Deal Pertama"
+          description:
+            type: string
+            example: "Dapatkan outcome closed pertama"
+          icon:
+            type: string
+            example: "🤝"
+          createdAt:
+            type: string
+            format: date-time
+      UserBadge:
+        type: object
+        properties:
+          badge:
+            $ref: '#/components/schemas/Badge'
+          unlockedAt:
+            type: string
+            format: date-time
+          metadata:
+            type: object
+            nullable: true
+      AiUsageLog:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          sessionId:
+            type: string
+            format: uuid
+            nullable: true
+          userId:
+            type: string
+            format: uuid
+            nullable: true
+          service:
+            type: string
+            enum: [roleplay, coaching, insight, facial]
+          model:
+            type: string
+            example: "llama3.1-8b"
+          promptTokens:
+            type: integer
+            example: 450
+          completionTokens:
+            type: integer
+            example: 120
+          totalTokens:
+            type: integer
+            example: 570
+          latencyMs:
+            type: integer
+            example: 380
+            nullable: true
+          createdAt:
+            type: string
+            format: date-time
+      AiApiKey:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          provider:
+            type: string
+            enum: [cerebras, openai, groq]
+            example: "cerebras"
+          label:
+            type: string
+            example: "Cerebras Production Key"
+          keyPreview:
+            type: string
+            example: "csk-e9k8..."
+          isActive:
+            type: boolean
+            example: true
+          createdById:
+            type: string
+            format: uuid
+          lastUsedAt:
+            type: string
+            format: date-time
+            nullable: true
+          createdAt:
+            type: string
+            format: date-time
+          updatedAt:
+            type: string
+            format: date-time
+      AuditLog:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          actorId:
+            type: string
+            format: uuid
+          actorRole:
+            type: string
+            example: "super_admin"
+          action:
+            type: string
+            example: "user.create"
+            description: |
+              Format: "{resource}.{verb}"
+              Contoh: user.create, user.delete, user.role_change,
+                      course.create, course.delete, ai_key.create,
+                      ai_key.deactivate, session.force_complete
+          targetType:
+            type: string
+            nullable: true
+            enum: [user, course, session, ai_key, null]
+          targetId:
+            type: string
+            nullable: true
+          metadata:
+            type: object
+            nullable: true
+          ipAddress:
+            type: string
+            nullable: true
+            example: "192.168.1.1"
+          createdAt:
+            type: string
+            format: date-time

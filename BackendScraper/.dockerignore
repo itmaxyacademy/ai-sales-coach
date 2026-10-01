@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────
+# .dockerignore — BackendScraper
+# Excludes files/folders from Docker build context
+# ─────────────────────────────────────────────
+
+# Python virtual environment
+venv/
+.venv/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables (secrets — never ship to image)
+.env
+.env.*
+*.env
+
+# Git version control
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# OS & editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Test & coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

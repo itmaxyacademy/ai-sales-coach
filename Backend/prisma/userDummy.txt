@@ -1,0 +1,49 @@
+========================================================
+    DUMMY CREDENTIALS FOR TESTING (MASSIVE SCALE)
+========================================================
+Semua password: password123
+
+👑 Super Admin: superadmin@salescoach.ai
+
+========================================================
+🏢 PT Indotrack Alat Berat (Heavy Equipment)
+   HR / Admin : hr@indotrack.co.id
+========================================================
+├── 👔 Manager 1 (Budi Pratama)
+│   ✉️ budi1@indotrack.co.id
+│
+│
+├── 👔 Manager 2 (Siti Wijaya)
+│   ✉️ siti8@indotrack.co.id
+│
+│
+└── ... (Total 12 Manager & 77 Sales per Perusahaan)
+
+========================================================
+🏢 PT Medika Persada Sakti (Medical Devices)
+   HR / Admin : hr@medikasakti.co.id
+========================================================
+├── 👔 Manager 1 (Dedi Prabowo)
+│   ✉️ dedi90@medikasakti.co.id
+│
+│
+├── 👔 Manager 2 (Nadia Firmansyah)
+│   ✉️ nadia97@medikasakti.co.id
+│
+│
+└── ... (Total 12 Manager & 77 Sales per Perusahaan)
+
+========================================================
+🏢 PT Pangan Nusantara Grosir (FMCG B2B)
+   HR / Admin : hr@pangannusantara.co.id
+========================================================
+├── 👔 Manager 1 (Siska Mulyana)
+│   ✉️ siska179@pangannusantara.co.id
+│
+│
+├── 👔 Manager 2 (Fajar Wiguna)
+│   ✉️ fajar186@pangannusantara.co.id
+│
+│
+└── ... (Total 12 Manager & 77 Sales per Perusahaan)
+

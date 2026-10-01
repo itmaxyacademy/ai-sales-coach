@@ -1,0 +1,148 @@
+# =====================================================
+# docker-compose.yml - Sales AI Coach (VPS & Local)
+# =====================================================
+# Konfigurasi dibaca otomatis dari .env.local / .env.production / .env
+# Cara jalan:
+#   docker compose up -d --build
+# =====================================================
+
+services:
+
+  # ─────────────────────────────────────────────────
+  # 1. BackendScraper - Python/FastAPI
+  # ─────────────────────────────────────────────────
+  scraper:
+    build:
+      context: ./BackendScraper
+      dockerfile: Dockerfile
+    container_name: sales_scraper
+    restart: unless-stopped
+    expose:
+      - "8001"
+    networks:
+      - sales_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────
+  # 2. BackendTTS: Python/FastAPI
+  # ─────────────────────────────────────────────────
+  tts:
+    build:
+      context: ./BackendTTS
+      dockerfile: Dockerfile
+    container_name: sales_tts
+    restart: unless-stopped
+    expose:
+      - "5001"
+    networks:
+      - sales_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 20s
+      timeout: 15s
+      retries: 10
+      start_period: 300s
+
+  # ─────────────────────────────────────────────────
+  # 3. Backend - Node.js / TypeScript / Prisma
+  # ─────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: sales_backend
+    restart: unless-stopped
+    ports:
+      - "5100:5000"
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+      - path: .env.production
+        required: false
+    environment:
+      NODE_ENV: production
+      TTS_PYTHON_URL: http://tts:5001
+      SCRAPER_PYTHON_URL: http://scraper:8001
+    depends_on:
+      scraper:
+        condition: service_started
+      tts:
+        condition: service_started
+    networks:
+      - sales_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─────────────────────────────────────────────────
+  # 4. Frontend - Next.js
+  # ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time env vars untuk Next.js (NEXT_PUBLIC_*)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5100/api}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    container_name: sales_frontend
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+      - path: .env.production
+        required: false
+    environment:
+      NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
+      PORT: "3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - sales_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ─────────────────────────────────────────────────
+  # 5. Dozzle - Log Viewer
+  # ─────────────────────────────────────────────────
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: sales_dozzle
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_BASE: /
+      DOZZLE_FILTER: "name=/sales_.*"
+    networks:
+      - sales_net
+
+# ─────────────────────────────────────────────────
+# Networks
+# ─────────────────────────────────────────────────
+networks:
+  sales_net:
+    driver: bridge

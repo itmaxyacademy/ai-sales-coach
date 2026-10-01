@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Company {
+  id               String           @id @default(uuid()) @db.Uuid
+  name             String
+  industry         String
+  website          String?
+  logoUrl          String?          @map("logo_url")
+  subscriptionPlan SubscriptionPlan @default(trial) @map("subscription_plan")
+  maxSeats         Int              @default(10) @map("max_seats")
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  description      String?
+  coreProducts     String?          @map("core_products")
+  targetAudience   String?          @map("target_audience")
+  usp              String?
+  commonObjections String?          @map("common_objections")
+  brandTone        String?          @map("brand_tone")
+  courses          Course[]
+  teams            Team[]
+  users            User[]
+
+  @@index([isActive])
+  @@map("companies")
+}
+
+model Team {
+  id          String               @id @default(uuid()) @db.Uuid
+  companyId   String               @map("company_id") @db.Uuid
+  name        String
+  description String?
+  isActive    Boolean              @default(true) @map("is_active")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+  leaders     TeamLeader[]
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignments TrainingAssignment[]
+  members     User[]               @relation("TeamMembers")
+
+  @@index([companyId])
+  @@index([isActive])
+  @@map("teams")
+}
+
+model TeamLeader {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  teamId     String   @map("team_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([userId])
+  @@index([teamId])
+  @@map("managers")
+}
+
+model User {
+  id                  String               @id @default(uuid()) @db.Uuid
+  companyId           String?              @map("company_id") @db.Uuid
+  teamId              String?              @map("team_id") @db.Uuid
+  name                String
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  role                UserRole             @default(karyawan)
+  isActive            Boolean              @default(true) @map("is_active")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  aiApiKeys           AiApiKey[]
+  auditLogs           AuditLog[]
+  createdCourses      Course[]             @relation("CourseCreator")
+  ledTeams            TeamLeader[]
+  messages            Message[]
+  notifications       Notification[]
+  sessions            Session[]
+  createdAssignments  TrainingAssignment[] @relation("AssignmentCreator")
+  trainingAssignments TrainingAssignment[] @relation("AssignmentUser")
+  profile             TrainingProfile?
+  badges              UserBadge[]
+  company             Company?             @relation(fields: [companyId], references: [id])
+  team                Team?                @relation("TeamMembers", fields: [teamId], references: [id])
+
+  @@index([role])
+  @@index([isActive])
+  @@index([companyId])
+  @@index([teamId])
+  @@map("users")
+}
+
+model Course {
+  id                   String               @id @default(uuid()) @db.Uuid
+  companyId            String?              @map("company_id") @db.Uuid
+  createdById          String               @map("created_by_id") @db.Uuid
+  title                String
+  description          String
+  difficulty           Difficulty
+  category             String
+  isActive             Boolean              @default(true) @map("is_active")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  personaName          String               @map("persona_name")
+  personaRole          String               @map("persona_role")
+  personaBackground    String               @map("persona_background")
+  personaPainPoints    String               @map("persona_pain_points")
+  personaObjections    String               @map("persona_objections")
+  personaBuyingSignals String               @map("persona_buying_signals")
+  personaPersonality   String               @map("persona_personality")
+  personaGender        String               @default("M") @map("persona_gender")
+  productName          String               @map("product_name")
+  productDescription   String               @map("product_description")
+  productStrengths     String               @map("product_strengths")
+  competitorNotes      String?              @map("competitor_notes")
+  scenarioContext      String               @map("scenario_context")
+  idealOutcome         String               @map("ideal_outcome")
+  aiModelSize          String               @default("7b") @map("ai_model_size")
+  aiTemperature        Float                @default(0.3) @map("ai_temperature")
+  maxTurns             Int                  @default(20) @map("max_turns")
+  defaultLanguage      String               @default("id") @map("default_language")
+  documents            CourseDocument[]
+  company              Company?             @relation(fields: [companyId], references: [id])
+  createdBy            User                 @relation("CourseCreator", fields: [createdById], references: [id])
+  rubric               ScoringRubric?
+  sessions             Session[]
+  assignments          TrainingAssignment[]
+
+  @@index([companyId])
+  @@index([createdById])
+  @@index([difficulty])
+  @@index([isActive])
+  @@map("courses")
+}
+
+model ScoringRubric {
+  id           String   @id @default(uuid()) @db.Uuid
+  courseId     String   @unique @map("course_id") @db.Uuid
+  passingScore Int      @default(70) @map("passing_score")
+  categories   Json
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@map("scoring_rubrics")
+}
+
+model CourseDocument {
+  id        String   @id @default(uuid()) @db.Uuid
+  courseId  String   @map("course_id") @db.Uuid
+  category  String
+  content   String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@map("course_documents")
+}
+
+model Session {
+  id             String              @id @default(uuid()) @db.Uuid
+  userId         String              @map("user_id") @db.Uuid
+  courseId       String              @map("course_id") @db.Uuid
+  status         SessionStatus       @default(active)
+  hasStarted     Boolean             @default(true) @map("has_started")
+  startedAt      DateTime            @default(now()) @map("started_at")
+  completedAt    DateTime?           @map("completed_at")
+  trustLevel     Float               @default(2.5) @map("trust_level")
+  customerStage  String              @default("cold") @map("customer_stage")
+  mood           String              @default("neutral")
+  turnCount      Int                 @default(0) @map("turn_count")
+  objectionCount Int                 @default(0) @map("objection_count")
+  hintCount      Int                 @default(0) @map("hint_count")
+  lastHintAt     DateTime?           @map("last_hint_at")
+  hintRequestStartedAt DateTime?     @map("hint_request_started_at")
+  language       String              @default("id")
+  ttsVoice       String              @default("M1") @map("tts_voice")
+  totalScore     Int?                @map("total_score")
+  scoreBreakdown Json?               @map("score_breakdown")
+  feedbackReport Json?               @map("feedback_report")
+  facialSummary  Json?               @map("facial_summary")
+  outcome        String?
+  messages       Message[]
+  course         Course              @relation(fields: [courseId], references: [id])
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignment     TrainingAssignment?
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([completedAt])
+  @@map("sessions")
+}
+
+model Message {
+  id           String         @id @default(uuid()) @db.Uuid
+  sessionId    String         @map("session_id") @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  role         TranscriptRole
+  content      String
+  createdAt    DateTime       @default(now()) @map("created_at")
+  turnScore    Int?           @map("turn_score")
+  coachingHint Json?          @map("coaching_hint")
+  ragContext   String?        @map("rag_context")
+  facialData   Json?          @map("facial_data")
+  trustDelta   Float?         @map("trust_delta")
+  session      Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("messages")
+}
+
+model TrainingAssignment {
+  id           String           @id @default(uuid()) @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  courseId     String           @map("course_id") @db.Uuid
+  assignedById String           @map("assigned_by_id") @db.Uuid
+  teamId       String?          @map("team_id") @db.Uuid
+  sessionId    String?          @unique @map("session_id") @db.Uuid
+  note         String?
+  status       AssignmentStatus @default(pending)
+  dueAt        DateTime?        @map("due_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  completedAt  DateTime?        @map("completed_at")
+  assignedBy   User             @relation("AssignmentCreator", fields: [assignedById], references: [id])
+  course       Course           @relation(fields: [courseId], references: [id])
+  session      Session?         @relation(fields: [sessionId], references: [id])
+  team         Team?            @relation(fields: [teamId], references: [id])
+  assignedTo   User             @relation("AssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([courseId])
+  @@index([teamId])
+  @@index([dueAt])
+  @@map("training_assignments")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model LeaderboardConfig {
+  id          String   @id @default(uuid()) @db.Uuid
+  c1Weight    Int      @default(30) @map("c1_weight")
+  c2Weight    Int      @default(30) @map("c2_weight")
+  c3Weight    Int      @default(20) @map("c3_weight")
+  c4Weight    Int      @default(15) @map("c4_weight")
+  c5Weight    Int      @default(5) @map("c5_weight")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedById String?  @map("updated_by_id") @db.Uuid
+
+  @@map("leaderboard_config")
+}
+
+model TrainingProfile {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @map("user_id") @db.Uuid
+  companyName    String   @map("company_name")
+  industry       String
+  product        String
+  targetCustomer String   @map("target_customer")
+  salesRole      String   @map("sales_role")
+  mainChallenge  String   @map("main_challenge")
+  focusAreas     String[] @map("focus_areas")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("training_profiles")
+}
+
+model AiUsageLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionId        String?  @map("session_id") @db.Uuid
+  userId           String?  @map("user_id") @db.Uuid
+  service          String
+  model            String
+  promptTokens     Int      @map("prompt_tokens")
+  completionTokens Int      @map("completion_tokens")
+  totalTokens      Int      @map("total_tokens")
+  latencyMs        Int?     @map("latency_ms")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([model])
+  @@map("ai_usage_logs")
+}
+
+model AiApiKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  provider    String
+  label       String
+  keyHash     String    @map("key_hash")
+  keyPreview  String    @map("key_preview")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdById String    @map("created_by_id") @db.Uuid
+  lastUsedAt  DateTime? @map("last_used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdBy   User      @relation(fields: [createdById], references: [id])
+
+  @@index([provider, isActive])
+  @@map("ai_api_keys")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  actorRole  String   @map("actor_role")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+  actor      User     @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Badge {
+  id          String      @id @default(uuid()) @db.Uuid
+  key         String      @unique
+  name        String
+  description String
+  icon        String
+  createdAt   DateTime    @default(now()) @map("created_at")
+  userBadges  UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  badgeId    String   @map("badge_id") @db.Uuid
+  unlockedAt DateTime @default(now()) @map("unlocked_at")
+  metadata   Json?
+  badge      Badge    @relation(fields: [badgeId], references: [id])
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+  @@map("user_badges")
+}
+
+enum Difficulty {
+  Beginner
+  Intermediate
+  Advanced
+}
+
+enum TranscriptRole {
+  user
+  assistant
+}
+
+enum UserRole {
+  karyawan
+  manager
+  company_admin
+  super_admin
+}
+
+enum AssignmentStatus {
+  pending
+  in_progress
+  completed
+}
+
+enum SessionStatus {
+  active
+  completed
+  abandoned
+}
+
+enum NotificationType {
+  new_assignment
+  due_date_reminder
+  session_completed
+  rank_up
+  broadcast
+}
+
+enum SubscriptionPlan {
+  trial
+  basic
+  pro
+  enterprise
+}

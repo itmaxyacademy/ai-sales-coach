@@ -1,0 +1,133 @@
+# .github/workflows/deploy.yml
+# =====================================================
+# CI/CD - Auto Deploy to VPS via GitHub Actions
+# =====================================================
+#
+# Required GitHub Secrets:
+#   VPS_HOST      - Domain/IP VPS (e.g., flownix.my.id)
+#   VPS_USER      - SSH User (e.g., ubuntu / root)
+#   VPS_SSH_KEY   - Private SSH key
+#   VPS_APP_DIR   - Absolute path to project on VPS
+#   ENV_FILE      - Contents of the production .env file
+# =====================================================
+
+name: Auto Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    if: github.repository == '9riffegndi/deployment-ai-sales-coaching'
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 25m
+          script: |
+            set -eu
+            PREV_COMMIT=""
+            rollback() {
+              status=$?
+              trap - EXIT
+              if [ "$status" -ne 0 ] && [ -n "$PREV_COMMIT" ]; then
+                echo "Deployment failed; restoring source commit $PREV_COMMIT"
+                git reset --hard "$PREV_COMMIT" || true
+                docker compose up -d --build || true
+              fi
+              exit "$status"
+            }
+            trap rollback EXIT
+            echo "================================================"
+            echo "Deployment started - $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "================================================"
+
+            # Navigate to project directory
+            cd ${{ secrets.VPS_APP_DIR }}
+
+            # Store previous commit for logging
+            PREV_COMMIT=$(git rev-parse HEAD)
+            echo "Previous commit: $PREV_COMMIT"
+
+            # Pull latest code
+            echo "Pulling latest code from GitHub..."
+            git rebase --abort || true
+            git merge --abort || true
+            git fetch origin main
+            git reset --hard origin/main
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "Current commit: $NEW_COMMIT"
+
+            # Write .env.local from GitHub Secret
+            echo "Writing .env.local..."
+            cat > .env.local << 'ENVEOF'
+            ${{ secrets.ENV_FILE }}
+            ENVEOF
+
+            # Copy .env.local to Backend
+            cp .env.local Backend/.env.local
+
+            # Stop existing containers for clean state
+            echo "Stopping existing containers..."
+            docker compose down --timeout 30 || true
+
+            # Build and start containers
+            echo "Building and starting containers..."
+            docker compose up -d --build
+
+            # Wait for Compose healthchecks instead of treating a created/running
+            # container as ready. TTS has a five-minute startup window.
+            echo "Waiting for service healthchecks..."
+            HEALTHY=false
+            for attempt in $(seq 1 72); do
+              HEALTHY=true
+              for svc in sales_backend sales_frontend sales_scraper sales_tts; do
+                STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$svc" 2>/dev/null || echo "not_found")
+                if [ "$STATUS" = "unhealthy" ] || [ "$STATUS" = "exited" ] || [ "$STATUS" = "not_found" ]; then
+                  echo "Health check failed: $svc -> $STATUS"
+                  docker logs --tail=30 "$svc" 2>&1 || true
+                  exit 1
+                fi
+                if [ "$STATUS" != "healthy" ]; then HEALTHY=false; fi
+              done
+              if [ "$HEALTHY" = "true" ]; then break; fi
+              sleep 10
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "Services did not become healthy before the timeout."
+              exit 1
+            fi
+
+            trap - EXIT
+            echo "Pruning unused images..."
+            docker image prune -f
+
+            echo "================================================"
+            echo "DEPLOYMENT SUCCESSFUL - $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "   Commit : $NEW_COMMIT"
+            echo "================================================"
+
+      - name: Deployment Successful
+        if: success()
+        run: echo "Deployment completed successfully."
+
+      - name: Deployment Failed
+        if: failure()
+        run: echo "Deployment failed. Check the logs for details."

@@ -1,0 +1,27 @@
+name: Bridge to Deployment Repository
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  mirror:
+    name: Sync Repository
+    # Ensure this only runs on the source repository to prevent infinite loops
+    if: github.repository == 'nabnabilaa/sales-ai-coach'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push to Deployment Repo
+        run: |
+          # Configure remote with synchronization token
+          git remote add target https://${{ secrets.SYNC_TOKEN }}@github.com/9riffegndi/deployment-ai-sales-coaching.git
+          
+          # Force push to the target repository
+          git push target HEAD:main --force

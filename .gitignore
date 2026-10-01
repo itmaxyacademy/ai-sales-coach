@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables & secrets
+.env
+.env.*
+/env.*
+*.bak
+!.env.example
+
+# Database
+.pgdata/
+*.pgdata
+
+# Logs
+*.log
+
+# Screenshots & Media
+screenshots/
+*.mp3
+
+# Python
+venv/
+env/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Office binary documents
+*.docx
+~$*.docx
+
+# Temporary & Scratch
+scratch/
+Frontend/lint_results.json

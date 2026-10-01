@@ -1,0 +1,19 @@
+# =====================================================
+# .dockerignore — BackendTTS
+# =====================================================
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+models/
+*.wav
+*.mp3
+tmp/
+.env
+.env.*
+.git/
+*.log
+node_modules/
+package-lock.json
