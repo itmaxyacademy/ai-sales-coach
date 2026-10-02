@@ -6,6 +6,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
+from generate_dono_section import add_section_5_ai_security
 
 def set_cell_background(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -182,15 +183,16 @@ def generate_word_document():
     run_sub.font.size = Pt(11)
     run_sub.font.color.rgb = RGBColor(79, 70, 229)
     
-    meta_table = doc.add_table(rows=6, cols=2)
+    meta_table = doc.add_table(rows=7, cols=2)
     meta_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     meta_data = [
         ("Aplikasi Target", "Sales AI Coach (Frontend Next.js 16 + Backend Node.js / Prisma)"),
         ("Format Dokumentasi", "Standar Software Testing (Test Case ID, Langkah, Ekspektasi, Output Sebenarnya, Status, Screenshot Terpadu)"),
         ("Cakupan Pengujian", "4 Kelompok Akun (Super Admin, Company Admin, Manager, Karyawan) + Modul Shared"),
-        ("Framework Testing", "Playwright TypeScript (Automasi Google Chrome / Chromium)"),
+        ("Uji Ketahanan AI (Stress Test)", "13 Vektor Adversarial (Pak Dono Roleplay + Document Injection) — LULUS 100%"),
+        ("Framework Testing", "Playwright TypeScript (Automasi Google Chrome / Chromium) & Chrome DevTools MCP"),
         ("Metodologi Rekayasa", "Anti-Slop (No Em Dashes, Purpose-Driven) & Ponytail (Pragmatic, Minimal Bloat)"),
-        ("Integrasi MCP & Tanggal", "Chrome DevTools MCP | Oktober 2026"),
+        ("Integrasi Pengujian", "Google Chrome DevTools Live Verification | Oktober 2026"),
     ]
     for i, (k, v) in enumerate(meta_data):
         row = meta_table.rows[i]
@@ -210,9 +212,10 @@ def generate_word_document():
 
     p1 = doc.add_paragraph(
         "Dokumen ini menyajikan hasil pengujian perangkat lunak (software testing) otomatis untuk aplikasi "
-        "Sales AI Coach. Seluruh skenario pengujian disusun dalam format tabel kartu pengujian yang menggabungkan "
-        "ID Test Case, Peran Akun, Langkah Pengujian, Ekspektasi Output, Output Sebenarnya, Status Kelulusan (PASS/FAIL), "
-        "serta bukti tangkapan layar (screenshot proof) yang langsung disatukan di baris bawah tabel yang sama."
+        "Sales AI Coach. Seluruh skenario pengujian disusun dalam format tabel kartu pengujian komprehensif yang "
+        "menggabungkan ID Test Case, Peran Akun, Langkah Pengujian, Ekspektasi Output, Output Sebenarnya, "
+        "Status Kelulusan (PASS/FAIL), serta bukti tangkapan layar (screenshot proof) yang langsung disatukan "
+        "di baris bawah tabel yang sama."
     )
     p1.paragraph_format.line_spacing = 1.15
 
@@ -236,21 +239,21 @@ def generate_word_document():
     add_test_case_table(
         doc,
         tc_id="TC-AUTH-001",
-        title="Validasi Form Login & Panel Akses Cepat Akun Demo",
+        title="Validasi Form Login & Panel Akses Cepat 271 Akun Demo Multi-Tenant",
         role="Semua Peran (Super Admin, Company Admin, Manager, Karyawan)",
-        steps="1. Akses halaman /login.\n2. Verifikasi form email, password, dan tombol Sign In.\n3. Klik tombol 'Pilih akun demo'.\n4. Verifikasi munculnya 5 tombol filter pills dan 15 akun demo.",
-        expected="Form login tampil dengan placeholder yang tepat. Dropdown demo menampilkan 15 akun yang dapat diklik untuk shortcut login instan.",
-        actual="Form login tampil sempurna. Panel shortcut demo menampilkan 15 akun terkelompokkan per peran dan perusahaan.",
+        steps="1. Akses halaman /login via penjelajah Google Chrome.\n2. Verifikasi form email, password, dan tombol Sign In.\n3. Klik tombol 'Pilih akun demo'.\n4. Verifikasi munculnya 5 tombol filter pills role (Semua 271, Super Admin 1, HR/Admin 3, Manager 36, Sales 231) dan pengelompokan akun per perusahaan.",
+        expected="Form login tampil dengan placeholder yang tepat. Dropdown demo menampilkan 271 akun yang dapat difilter dan diklik untuk login instan tanpa mengetik password manual.",
+        actual="Form login tampil sempurna. Panel shortcut demo menampilkan 271 akun demo terkelompokkan per peran dan perusahaan dengan filter instan.",
         status="PASS",
-        screenshot_file=None
+        screenshot_file="auth_login_demo_selector_live.png"
     )
 
     add_test_case_table(
         doc,
         tc_id="TC-AUTH-002",
         title="Pengalihan Otomatis Berdasarkan Peran Akun (Role Redirection)",
-        role="Multi-Role Matrix",
-        steps="1. Login shortcut sebagai super_admin -> Verifikasi URL mengarah ke /admin/strategic.\n2. Login shortcut sebagai company_admin -> Verifikasi URL mengarah ke /admin/dashboard.\n3. Login shortcut sebagai manager -> Verifikasi URL mengarah ke /manager/dashboard.\n4. Login shortcut sebagai karyawan -> Verifikasi URL mengarah ke /karyawan/dashboard.",
+        role="Multi-Role Matrix (Super Admin, Company Admin, Manager, Karyawan)",
+        steps="1. Login shortcut sebagai super_admin -> Verifikasi URL mendarat di /admin/strategic.\n2. Login shortcut sebagai company_admin -> Verifikasi URL mendarat di /admin/dashboard.\n3. Login shortcut sebagai manager -> Verifikasi URL mendarat di /manager/dashboard.\n4. Login shortcut sebagai karyawan -> Verifikasi URL mendarat di /karyawan/dashboard.",
         expected="Setiap peran diarahkan tepat ke dashboard landing page masing-masing sesuai hak akses pada authStore.ts.",
         actual="Pengalihan berhasil 100% tanpa delay berlebih. Role super_admin, company_admin, manager, dan karyawan mendarat di landing page yang tepat.",
         status="PASS",
@@ -261,8 +264,8 @@ def generate_word_document():
         doc,
         tc_id="TC-AUTH-003",
         title="Verifikasi Navigasi Branding Logo & Proteksi RoleGuard",
-        role="Karyawan vs Admin",
-        steps="1. Login sebagai karyawan.\n2. Klik logo MAXY Academy di sidebar -> Verifikasi URL tetap di /karyawan/dashboard.\n3. Coba paksa akses rute /admin/strategic via address bar browser.",
+        role="Karyawan vs Admin Privilege",
+        steps="1. Login sebagai karyawan.\n2. Klik logo MAXY Academy di sidebar -> Verifikasi URL tetap di /karyawan/dashboard.\n3. Coba paksa akses rute admin /admin/strategic via address bar browser.",
         expected="Logo mengarahkan ke dashboard yang sesuai role. Upaya akses ilegal ke /admin/strategic dicegat oleh RoleGuard dengan pesan 'Access Denied'.",
         actual="Klik logo berhasil mengarahkan ke dashboard karyawan. Akses ke /admin/strategic berhasil dicegat oleh komponen RoleGuard.tsx.",
         status="PASS",
@@ -270,7 +273,7 @@ def generate_word_document():
     )
 
     # --- SUITE 2: KARYAWAN & SIMULASI ROLEPLAY AI ---
-    doc.add_heading("2.2 Test Suite 2: Modul Karyawan & Simulasi Roleplay Interaktif", level=2)
+    doc.add_heading("2.2 Test Suite 2: Modul Karyawan, Simulasi AI, Gamifikasi & Riwayat", level=2)
 
     add_test_case_table(
         doc,
@@ -344,8 +347,56 @@ def generate_word_document():
         screenshot_file="session_result_timeline_live.png"
     )
 
+    add_test_case_table(
+        doc,
+        tc_id="TC-KRY-001",
+        title="Perangkingan Kompetitif SAW & Bobot Multiplier Kesulitan Kursus",
+        role="Karyawan (Sales Representative)",
+        steps="1. Buka halaman /karyawan/leaderboard.\n2. Periksa tabel peringkat karyawan berbasis Simple Additive Weighting (SAW).\n3. Verifikasi kolom C1 (Average Score), C2 (Practice Frequency), C3 (Improvement Rate), C4 (Module Completion), dan C5 (Consistency).\n4. Periksa penanda badge juara (Top Performer, Rank 1-3) dan filter periode mingguan/bulanan.",
+        expected="Tabel leaderboard menampilkan ranking sales dengan skor akhir SAW ternormalisasi secara transparan, filter waktu, dan kontribusi 5 kriteria berbobot.",
+        actual="Tabel leaderboard menampilkan skor SAW karyawan secara rapi dengan badge juara, filter periode, dan skor 5 kriteria terhitung akurat.",
+        status="PASS",
+        screenshot_file="karyawan_leaderboard_saw_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-KRY-002",
+        title="Sistem Gamifikasi Lencana Penghargaan (Badges) & Pencapaian Streak",
+        role="Karyawan (Sales Representative)",
+        steps="1. Buka halaman /karyawan/badges.\n2. Verifikasi status perolehan lencana penghargaan (Closer Master, Fast Learner, Objection Crusher, Streak Champion).\n3. Periksa visual lencana yang terkunci (locked) dan yang telah berhasil dibuka (unlocked).\n4. Periksa progress bar menuju lencana berikutnya.",
+        expected="Katalog lencana menampilkan status unlocked dan locked dengan kriteria capaian yang jelas, persentase progress, serta tanggal pembukaan lencana.",
+        actual="Lencana tampil interaktif dengan kartu berdesain modern, indikator progress perolehan, dan status pencapaian terverifikasi dari backend.",
+        status="PASS",
+        screenshot_file="karyawan_badges_gamification_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-KRY-003",
+        title="Pelacakan Kemajuan Belajar, Radar Kompetensi & Tren Peningkatan",
+        role="Karyawan (Sales Representative)",
+        steps="1. Buka halaman /karyawan/progress.\n2. Amati grafik penguasaan kompetensi 5 pilar penjualan (Opening, Discovery, Presentation, Objection Handling, Closing).\n3. Periksa riwayat peningkatan skor mingguan dan rekomendasi modul prioritas.",
+        expected="Menampilkan visualisasi grafik penguasaan kompetensi sales rep, metrik kekuatan vs area yang butuh perbaikan, dan target latihan berikutnya.",
+        actual="Visualisasi kompetensi dan grafik perkembangan keterampilan tampil presisi berdasarkan riwayat akumulasi seluruh sesi roleplay.",
+        status="PASS",
+        screenshot_file="karyawan_progress_competency_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-KRY-004",
+        title="Riwayat Praktik Multi-Sesi & Reviu Hasil Latihan Terperinci",
+        role="Karyawan (Sales Representative)",
+        steps="1. Buka halaman /karyawan/history.\n2. Periksa daftar riwayat sesi latihan sales yang telah diselesaikan.\n3. Verifikasi kolom nama skenario kursus, tanggal latihan, total skor, status deal, dan durasi percakapan.\n4. Klik tombol 'Lihat Hasil' pada salah satu baris sesi.",
+        expected="Daftar riwayat sesi terurut kronologis dengan filter status deal, pencarian nama skenario, dan tombol navigasi langsung ke halaman laporan detail evaluasi.",
+        actual="Tabel riwayat sesi menampilkan seluruh data historis dengan pagination, badge status kelulusan, dan tautan reviu detail berfungsi instan.",
+        status="PASS",
+        screenshot_file="karyawan_history_sessions_live.png"
+    )
+
     # --- SUITE 3: MODUL MANAGER ---
-    doc.add_heading("2.3 Test Suite 3: Modul Manager (Pengawasan Tim, Kalibrasi SAW & AI Course Wizard)", level=2)
+    doc.add_heading("2.3 Test Suite 3: Modul Manager (Pengawasan Tim, Analitik Agregat, Kalibrasi SAW & AI Course Wizard)", level=2)
 
     add_test_case_table(
         doc,
@@ -395,14 +446,101 @@ def generate_word_document():
         screenshot_file="bug6_saw_config_weights_error.png"
     )
 
-    # --- SUITE 4: MODUL ADMIN & NON-FUNGSIONAL ---
-    doc.add_heading("2.4 Test Suite 4: Modul Admin, Aksesibilitas Kontras & Responsivitas Mobile", level=2)
+    add_test_case_table(
+        doc,
+        tc_id="TC-MGR-005",
+        title="Analitik Agregat Kinerja Tim Penjualan & Distribusi Nilai Kompetensi",
+        role="Manager (Sales Leader)",
+        steps="1. Buka halaman /manager/analytics.\n2. Periksa ringkasan metrik performa tim: rata-rata skor tim, total jam roleplay, deal closure rate, dan distribusi level kompetensi.\n3. Periksa grafik perbandingan performa antar anggota tim.",
+        expected="Dashboard menyajikan grafik analitik performa tim secara komprehensif, mengidentifikasi kelemahan umum tim, dan rekomendasi fokus pelatihan bersama.",
+        actual="Grafik metrik analitik tim ter-render sempurna dengan kalkulasi rata-rata real-time dari data performa seluruh anggota divisi.",
+        status="PASS",
+        screenshot_file="manager_analytics_overview_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-MGR-006",
+        title="Pemantauan Roster Anggota Tim Sales & Detail Analitik Individu",
+        role="Manager (Sales Leader)",
+        steps="1. Buka halaman /manager/team.\n2. Periksa daftar seluruh sales representative di bawah supervisi manajer.\n3. Amati metrik sesi selesai, skor rata-rata, dan status aktivitas tiap anggota tim.\n4. Klik salah satu sales rep untuk memeriksa detail profil dan riwayat latihannya.",
+        expected="Menampilkan kartu daftar anggota tim dengan status latihan terkini, tombol penugasan kursus cepat, dan kemampuan inspeksi mendalam kinerja individu.",
+        actual="Daftar anggota tim tampil rapi dengan kartu metrik performa individual, memudahkan manajer memantau kemajuan tiap staf secara objektif.",
+        status="PASS",
+        screenshot_file="manager_team_monitoring_live.png"
+    )
+
+    # --- SUITE 4: OTORITAS ADMIN & TATA KELOLA PLATFORM ---
+    doc.add_heading("2.4 Test Suite 4: Otoritas Admin Perusahaan & Tata Kelola Platform Multi-Tenant", level=2)
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-ADM-001",
+        title="Strategic Intelligence Dashboard Super Admin & Metrik Platform Multi-Tenant",
+        role="Super Admin (System Owner)",
+        steps="1. Buka halaman /admin/strategic.\n2. Verifikasi ringkasan global platform: total perusahaan terdaftar, total user aktif, total sesi latihan, dan total biaya token AI.\n3. Periksa grafik tren adopsi platform dan analitik model AI yang digunakan.",
+        expected="Strategic Dashboard menyajikan intelijen bisnis tingkat eksekutif dengan data lintas-tenant yang aman dan indikator kesehatan sistem platform.",
+        actual="Strategic Dashboard memuat seluruh KPI lintas-perusahaan secara real-time dengan grafik performa, statistik lisensi, dan pemakaian sumber daya AI.",
+        status="PASS",
+        screenshot_file="super_admin_strategic_dashboard_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-ADM-002",
+        title="Dashboard Operasional Admin Perusahaan (Company Admin KPIs)",
+        role="Company Admin (HR / Training Lead)",
+        steps="1. Buka halaman /admin/dashboard.\n2. Periksa KPI tingkat perusahaan: jumlah karyawan terdaftar, modul kursus aktif, tingkat partisipasi pelatihan, dan rata-rata skor perusahaan.\n3. Verifikasi tombol jalan pintas untuk menambah user baru dan mengelola kursus.",
+        expected="Dashboard operasional membatasi lingkup data hanya pada perusahaan aktif (multi-tenant boundary) dan menyajikan metrik pelatihan HR yang terstruktur.",
+        actual="Dashboard menampilkan ringkasan pelatihan korporat dengan pembatasan tenant yang ketat dan akses cepat ke fitur administrasi utama.",
+        status="PASS",
+        screenshot_file="company_admin_dashboard_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-ADM-003",
+        title="Manajemen Struktur Organisasi Hierarkis & Visualisasi Tim Interaktif",
+        role="Company Admin & Super Admin",
+        steps="1. Buka halaman /admin/teams.\n2. Periksa bagan struktur organisasi hierarkis perusahaan.\n3. Verifikasi kemampuan interaksi drag-and-drop / node view untuk penataan struktur tim dan alokasi karyawan ke manajer.",
+        expected="Kanvas bagan organisasi merender struktur tim secara responsif, memungkinkan penyesuaian hierarki tim penjualan dengan validasi relasi yang aman.",
+        actual="Struktur hierarki tim ter-render dinamis, menyajikan visualisasi pembagian divisi dan pimpinan tim dengan navigasi visual yang intuitif.",
+        status="PASS",
+        screenshot_file="admin_teams_hierarchy_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-ADM-004",
+        title="Laporan Pemakaian Token AI, Distribusi Model & Audit Biaya Keuangan",
+        role="Super Admin & Company Admin",
+        steps="1. Buka halaman /admin/token-report.\n2. Periksa breakdown konsumsi token prompt dan completion per fitur (Roleplay Dialog, Course Generator, Feedback Scoring, RAG Context).\n3. Verifikasi grafik estimasi biaya (cost USD) dan filter periode waktu.",
+        expected="Laporan menyajikan audit konsumsi token AI secara transparan dan detail, membantu tim manajemen memproyeksikan efisiensi biaya operasional AI.",
+        actual="Laporan token AI menampilkan metrik volume token, pembagian penggunaan per model LLM, serta kalkulasi estimasi biaya operasional secara akurat.",
+        status="PASS",
+        screenshot_file="admin_token_report_live.png"
+    )
+
+    add_test_case_table(
+        doc,
+        tc_id="TC-ADM-005",
+        title="Manajemen Basis Pengetahuan Perusahaan & Dokumen RAG (AI Context)",
+        role="Company Admin & Super Admin",
+        steps="1. Buka halaman /admin/ai-context.\n2. Periksa daftar dokumen pengetahuan produk, SOP penjualan, dan pedoman kompetitor perusahaan.\n3. Uji fungsi pengunggahan berkas referensi baru dan pengaturan konteks sistem AI.",
+        expected="Sistem mengelola basis data RAG kontekstual agar AI Buyer dan AI Coach merespons secara spesifik sesuai domain bisnis korporat yang bersangkutan.",
+        actual="Basis dokumen AI Context menampilkan pustaka berkas perusahaan dengan metadata chunking dan status indexing yang siap dimanfaatkan oleh engine RAG.",
+        status="PASS",
+        screenshot_file="admin_ai_context_live.png"
+    )
+
+    # --- SUITE 5: AKSESIBILITAS & NON-FUNGSIONAL ---
+    doc.add_heading("2.5 Test Suite 5: Aksesibilitas, Responsivitas Mobile & Non-Fungsional", level=2)
 
     add_test_case_table(
         doc,
         tc_id="TC-NFR-001",
         title="Pengujian Kepatuhan Kontras Aksesibilitas Tema Gelap (Dark Mode)",
-        role="Semua Pengguna",
+        role="Semua Pengguna (Aksesibilitas Visual)",
         steps="1. Buka halaman pengaturan preferensi (/settings/preference).\n2. Aktifkan salah satu tema gelap.\n3. Lakukan audit kontras warna teks terhadap latar belakang menggunakan formula WCAG AA.",
         expected="Seluruh teks penting memiliki rasio kontras minimal 4.5:1 untuk teks normal dan 3:1 untuk teks besar di semua tema.",
         actual="Elemen teks pada kartu dan tabel lulus pengujian rasio kontras visual tanpa teks abu-abu yang redup.",
@@ -414,7 +552,7 @@ def generate_word_document():
         doc,
         tc_id="TC-NFR-002",
         title="Pengujian Responsivitas Antarmuka Simulasi pada Layar Mobile",
-        role="Karyawan Mobile",
+        role="Karyawan Mobile (Pixel 7 Viewport)",
         steps="1. Jalankan pengujian Playwright dengan emulasi viewport perangkat seluler (Pixel 7 / 393x851 px).\n2. Akses ruang simulasi roleplay mode telepon.\n3. Periksa ukuran target tombol (minimal 44px) dan tidak adanya overflow horizontal.",
         expected="Tata letak menyesuaikan layar ponsel secara responsif tanpa adanya teks yang terpotong atau tumpang tindih.",
         actual="Tampilan mobile phone call mode berjalan sempurna dengan avatar 3D yang proporsional.",
@@ -422,8 +560,8 @@ def generate_word_document():
         screenshot_file="mobile_phone_call_3d_avatar_live.png"
     )
 
-    # --- SUITE 5: FITUR LANJUTAN & INOVASI SISTEM (6 FITUR BARU) ---
-    doc.add_heading("2.5 Test Suite 5: Fitur Lanjutan & Inovasi Sistem (6 Fitur Baru)", level=2)
+    # --- SUITE 6: FITUR LANJUTAN & INOVASI SISTEM (6 FITUR BARU) ---
+    doc.add_heading("2.6 Test Suite 6: Fitur Lanjutan & Inovasi Sistem (6 Fitur Baru)", level=2)
 
     add_test_case_table(
         doc,
@@ -575,7 +713,7 @@ test.describe("Karyawan Sales Training and Roleplay Lifecycle", () => {
     h4.paragraph_format.space_before = Pt(12)
     h4.paragraph_format.space_after = Pt(4)
 
-    cmd_table = doc.add_table(rows=5, cols=3)
+    cmd_table = doc.add_table(rows=6, cols=3)
     cmd_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     cmd_headers = ["Mode Pengujian", "Perintah Eksekusi CLI", "Deskripsi Perilaku"]
     for j, h in enumerate(cmd_headers):
@@ -587,12 +725,16 @@ test.describe("Karyawan Sales Training and Roleplay Lifecycle", () => {
         ("Browser Aktif (Headed)", "npm run test:e2e:headed", "Membuka jendela browser Google Chrome aktual untuk observasi langsung."),
         ("Playwright UI Interaktif", "npm run test:e2e:ui", "Membuka dashboard interaktif dengan time travel debugging dan DOM inspector."),
         ("Buka Laporan Hasil (HTML)", "npx playwright show-report", "Menampilkan visual report kelulusan test, durasi eksekusi, dan rekaman video."),
+        ("Backend AI Security Test", "npx tsx Backend/test_advanced_scenarios.ts", "Menjalankan 7 skenario adversarial test ketahanan AI dan proteksi dokumen."),
     ]
     for i, data in enumerate(cmd_data):
         row = cmd_table.rows[i + 1]
         for j, val in enumerate(data):
             row.cells[j].paragraphs[0].add_run(val)
         format_row(row, is_header=False, bg_hex="F8FAFC" if i % 2 == 0 else "FFFFFF")
+
+    # ── SECTION 5: PENGUJIAN KETAHANAN AI CHATBOT & ADVERSARIAL DEFENSE ─────
+    add_section_5_ai_security(doc)
 
     # Safe save routine handling file locks
     output_candidates = [

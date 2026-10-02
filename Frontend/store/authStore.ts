@@ -34,6 +34,7 @@ interface User {
   email: string;
   role: Role;
   companyId?: string | null;
+  companyName?: string | null;
 }
 
 interface AuthState {

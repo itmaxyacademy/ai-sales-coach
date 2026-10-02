@@ -1,36 +1,103 @@
-# OS
+# =====================================================
+# OS & Editor
+# =====================================================
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Environment variables & secrets
+# =====================================================
+# Environment Variables & Secrets (JANGAN DI-COMMIT)
+# =====================================================
 .env
 .env.*
+*.env
+env.*
 /env.*
 *.bak
+*.pem
+*.key
+*.cert
 !.env.example
 
-# Database
-.pgdata/
-*.pgdata
-
-# Logs
-*.log
-
-# Screenshots & Media
-screenshots/
-*.mp3
-
-# Python
+# =====================================================
+# Dependencies & Package Managers
+# =====================================================
+node_modules/
 venv/
 env/
-__pycache__/
-*.pyc
-.pytest_cache/
+.venv/
+ENV/
 
-# Office binary documents
+# =====================================================
+# Build & Output
+# =====================================================
+dist/
+build/
+.next/
+out/
+.vercel/
+
+# =====================================================
+# Python Cache & Testing
+# =====================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+.pytest_cache/
+.tox/
+coverage/
+.nyc_output/
+
+# =====================================================
+# TypeScript
+# =====================================================
+*.tsbuildinfo
+
+# =====================================================
+# Database & Local State
+# =====================================================
+.pgdata/
+*.pgdata
+*.sqlite
+*.db
+
+# =====================================================
+# Logs
+# =====================================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# =====================================================
+# Screenshots & Media Output
+# =====================================================
+screenshots/
+screenshots_pak_dono/
+*.mp3
+*.wav
+*.ogg
+*.flac
+
+# =====================================================
+# Office Binary Documents & Locks
+# =====================================================
 *.docx
 ~$*.docx
+*.xlsx
+~$*.xlsx
+*.pptx
+~$*.pptx
 
-# Temporary & Scratch
+# =====================================================
+# Temporary & Scratch Files
+# =====================================================
 scratch/
-Frontend/lint_results.json
+*.tmp
+lint_results.json

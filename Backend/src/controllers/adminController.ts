@@ -94,6 +94,14 @@ export const getSystemInfo: RequestHandler = async (req, res, next) => {
   }
 };
 
+function calculateTokenCostUSD(model: string, promptTokens: number, completionTokens: number): number {
+  const m = model.toLowerCase();
+  if (m === "gpt-4o") return (promptTokens * 2.50 + completionTokens * 10.00) / 1000000;
+  if (m === "gpt-4o-mini") return (promptTokens * 0.15 + completionTokens * 0.60) / 1000000;
+  if (m === "zai-glm-4.7") return (promptTokens * 2.25 + completionTokens * 2.75) / 1000000;
+  return (promptTokens * 0.35 + completionTokens * 0.75) / 1000000;
+}
+
 async function buildTokenUsageFilter(query: Record<string, unknown>, user: { role?: string; companyId?: string | null } | undefined) {
   const text = (key: string) => {
     const value = query[key];
@@ -104,6 +112,9 @@ async function buildTokenUsageFilter(query: Record<string, unknown>, user: { rol
   const from = text("from");
   const to = text("to");
   const team = text("team");
+  const company = text("company");
+  const companyId = text("companyId");
+  const search = text("search");
   const course = text("course");
   const model = text("model");
   const minScore = text("minScore");
@@ -130,13 +141,30 @@ async function buildTokenUsageFilter(query: Record<string, unknown>, user: { rol
     ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
     ...(model ? { model } : {}),
   };
-  if (user?.role !== "super_admin" || team) {
+
+  // Filter user, team, company, dan search query
+  if (user?.role !== "super_admin" || team || company || companyId || search) {
     const userWhere: Prisma.UserWhereInput = {};
-    if (user?.role !== "super_admin") userWhere.companyId = user?.companyId ?? "__no_company__";
+    if (user?.role !== "super_admin") {
+      userWhere.companyId = user?.companyId ?? "__no_company__";
+    } else if (companyId) {
+      userWhere.companyId = companyId;
+    } else if (company) {
+      userWhere.company = { name: { contains: company, mode: "insensitive" } };
+    }
     if (team) userWhere.team = { name: { contains: team, mode: "insensitive" } };
+    if (search) {
+      userWhere.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+        { team: { name: { contains: search, mode: "insensitive" } } },
+        { company: { name: { contains: search, mode: "insensitive" } } },
+      ];
+    }
     const users = await prisma.user.findMany({ where: userWhere, select: { id: true } });
     where.userId = { in: users.map(item => item.id) };
   }
+
   if (course || Object.keys(scoreFilter).length) {
     const sessions = await prisma.session.findMany({
       where: {
@@ -157,20 +185,37 @@ async function getTokenUsageRows(logs: Array<{
   const userIds = [...new Set(logs.flatMap(log => log.userId ? [log.userId] : []))];
   const sessionIds = [...new Set(logs.flatMap(log => log.sessionId ? [log.sessionId] : []))];
   const [users, sessions] = await Promise.all([
-    userIds.length ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, team: { select: { name: true } } } }) : [],
-    sessionIds.length ? prisma.session.findMany({ where: { id: { in: sessionIds } }, select: { id: true, totalScore: true, course: { select: { title: true } } } }) : [],
+    userIds.length ? prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: {
+        id: true,
+        name: true,
+        team: { select: { name: true } },
+        company: { select: { id: true, name: true } },
+      }
+    }) : [],
+    sessionIds.length ? prisma.session.findMany({
+      where: { id: { in: sessionIds } },
+      select: { id: true, totalScore: true, course: { select: { title: true } } }
+    }) : [],
   ]);
   const userMap = new Map(users.map(item => [item.id, item]));
   const sessionMap = new Map(sessions.map(item => [item.id, item]));
   return logs.map(log => {
     const owner = log.userId ? userMap.get(log.userId) : undefined;
     const session = log.sessionId ? sessionMap.get(log.sessionId) : undefined;
+
+    const cost = calculateTokenCostUSD(log.model, log.promptTokens, log.completionTokens);
+
     return {
       ...log,
       userName: owner?.name ?? "",
       teamName: owner?.team?.name ?? "",
+      companyName: owner?.company?.name ?? "Umum / Internal",
+      companyId: owner?.company?.id ?? null,
       courseTitle: session?.course.title ?? "",
       score: session?.totalScore ?? null,
+      estimatedCostUSD: Number(cost.toFixed(5)),
     };
   });
 }
@@ -249,6 +294,49 @@ export const getTokenUsage: RequestHandler = async (req, res, next) => {
         }))
       : [];
 
+    // Hitung pengelompokan token dan estimasi biaya per perusahaan (byCompany)
+    const allUserIds = [...new Set(logs.flatMap(log => log.userId ? [log.userId] : []))];
+    const allUsers = allUserIds.length ? await prisma.user.findMany({
+      where: { id: { in: allUserIds } },
+      select: {
+        id: true,
+        company: { select: { id: true, name: true } }
+      }
+    }) : [];
+    const userCompanyMap = new Map(allUsers.map(u => [u.id, u.company]));
+
+    const companyMap = new Map<string, { companyId: string; companyName: string; totalTokens: number; promptTokens: number; completionTokens: number; requests: number; estimatedCostUSD: number }>();
+
+    for (const log of logs) {
+      const comp = log.userId ? userCompanyMap.get(log.userId) : null;
+      const cId = comp?.id || "unassigned";
+      const cName = comp?.name || "Umum / Internal";
+
+      const cData = companyMap.get(cId) || {
+        companyId: cId,
+        companyName: cName,
+        totalTokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        requests: 0,
+        estimatedCostUSD: 0,
+      };
+
+      cData.totalTokens += log.totalTokens;
+      cData.promptTokens += log.promptTokens;
+      cData.completionTokens += log.completionTokens;
+      cData.requests += 1;
+      cData.estimatedCostUSD += calculateTokenCostUSD(log.model, log.promptTokens, log.completionTokens);
+      companyMap.set(cId, cData);
+    }
+
+    const byCompany = Array.from(companyMap.values())
+      .sort((a, b) => b.totalTokens - a.totalTokens)
+      .map(item => ({
+        ...item,
+        estimatedCostUSD: Number(item.estimatedCostUSD.toFixed(5)),
+      }));
+
     res.json({
       summary: {
         totalTokens,
@@ -259,6 +347,7 @@ export const getTokenUsage: RequestHandler = async (req, res, next) => {
       byModel,
       byDay,
       byService,
+      byCompany,
       logs: await getTokenUsageRows(logs.slice().reverse().slice((page - 1) * limit, page * limit)),
       meta: { page, limit, total: logs.length, totalPages: Math.ceil(logs.length / limit) },
     });
@@ -277,8 +366,8 @@ export const exportTokenUsage: RequestHandler = async (req, res, next) => {
       const safe = /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
       return `"${safe.replace(/"/g, '""')}"`;
     };
-    const columns = ["Created At", "User", "Team", "Course", "Score", "Service", "Model", "Prompt Tokens", "Completion Tokens", "Total Tokens"];
-    const csv = [columns, ...rows.map(row => [row.createdAt.toISOString(), row.userName, row.teamName, row.courseTitle, row.score, row.service, row.model, row.promptTokens, row.completionTokens, row.totalTokens])]
+    const columns = ["Created At", "Company", "User", "Team", "Course", "Score", "Service", "Model", "Prompt Tokens", "Completion Tokens", "Total Tokens", "Est Cost USD"];
+    const csv = [columns, ...rows.map(row => [row.createdAt.toISOString(), row.companyName, row.userName, row.teamName, row.courseTitle, row.score, row.service, row.model, row.promptTokens, row.completionTokens, row.totalTokens, `$${row.estimatedCostUSD.toFixed(5)}`])]
       .map(row => row.map(csvCell).join(",")).join("\n");
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=token-usage-export.csv");
@@ -312,24 +401,7 @@ export const getTokenUsageCost: RequestHandler = async (req, res, next) => {
     const serviceCostMap = new Map<string, { promptTokens: number; completionTokens: number; cost: number }>();
 
     for (const log of logs) {
-      let cost = 0;
-      const modelLower = log.model.toLowerCase();
-      if (modelLower === "gpt-oss-120b") {
-        // Cerebras
-        cost = (log.promptTokens * 0.35) / 1000000 + (log.completionTokens * 0.75) / 1000000;
-      } else if (modelLower === "gpt-4o") {
-        // OpenAI GPT-4o: $2.50 per 1M input, $10.00 per 1M output
-        cost = (log.promptTokens * 2.50) / 1000000 + (log.completionTokens * 10.00) / 1000000;
-      } else if (modelLower === "gpt-4o-mini") {
-        // OpenAI GPT-4o mini: $0.15 per 1M input, $0.60 per 1M output
-        cost = (log.promptTokens * 0.15) / 1000000 + (log.completionTokens * 0.60) / 1000000;
-      } else if (modelLower === "zai-glm-4.7") {
-        cost = (log.promptTokens * 2.25) / 1000000 + (log.completionTokens * 2.75) / 1000000;
-      } else {
-        // Default/Fallback
-        cost = (log.promptTokens * 0.35) / 1000000 + (log.completionTokens * 0.75) / 1000000;
-      }
-
+      const cost = calculateTokenCostUSD(log.model, log.promptTokens, log.completionTokens);
       totalEstimatedUSD += cost;
 
       const mCost = modelCostMap.get(log.model) || { promptTokens: 0, completionTokens: 0, cost: 0 };

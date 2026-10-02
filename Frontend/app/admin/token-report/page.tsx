@@ -1,10 +1,24 @@
-// Frontend/app/admin/token-report/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { apiClient } from "../../../lib/api/client";
+import { useAuthStore } from "../../../store/authStore";
 import { PageHeader, PeriodSwitcher, StatCard, AutoSkeleton } from "../../../components/ui";
-import { Cpu, DollarSign, Activity, Sparkles, TrendingUp } from "lucide-react";
+import {
+  Cpu,
+  DollarSign,
+  Activity,
+  Sparkles,
+  Building2,
+  Search,
+  Download,
+  RotateCcw,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  ArrowRight
+} from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -15,9 +29,35 @@ import {
   CartesianGrid,
   BarChart,
   Bar,
-  Cell,
-  Legend
+  Cell
 } from "recharts";
+
+interface CompanyStat {
+  companyId: string;
+  companyName: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  requests: number;
+  estimatedCostUSD: number;
+}
+
+interface UsageLog {
+  id: string;
+  createdAt: string;
+  userName: string | null;
+  teamName: string | null;
+  courseTitle: string | null;
+  companyId?: string | null;
+  companyName?: string | null;
+  score: number | null;
+  service: string;
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens: number;
+  estimatedCostUSD?: number;
+}
 
 interface UsageData {
   summary: {
@@ -32,6 +72,7 @@ interface UsageData {
     requests: number;
     avgTokensPerRequest: number;
   }[];
+  byCompany?: CompanyStat[];
   byDay: {
     date: string;
     totalTokens: number;
@@ -42,29 +83,50 @@ interface UsageData {
     totalTokens: number;
     requests: number;
   }[];
-  logs: {
-    id: string;
-    createdAt: string;
-    userName: string;
-    teamName: string;
-    courseTitle: string;
-    score: number | null;
-    service: string;
-    model: string;
-    totalTokens: number;
-  }[];
-  meta: { page: number; total: number; totalPages: number };
+  logs: UsageLog[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
-type TokenFilters = { team: string; course: string; from: string; to: string; minScore: string; maxScore: string };
-const emptyFilters: TokenFilters = { team: "", course: "", from: "", to: "", minScore: "", maxScore: "" };
+type TokenFilters = {
+  search: string;
+  companyId: string;
+  model: string;
+  team: string;
+  course: string;
+  from: string;
+  to: string;
+  minScore: string;
+  maxScore: string;
+};
+
+const emptyFilters: TokenFilters = {
+  search: "",
+  companyId: "",
+  model: "",
+  team: "",
+  course: "",
+  from: "",
+  to: "",
+  minScore: "",
+  maxScore: ""
+};
+
 const paramsForFilters = (filters: TokenFilters, period: string) => {
   const params = new URLSearchParams();
   if (!filters.from && !filters.to && period !== "all") {
     const days = Number(period);
     params.set("from", new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString());
   }
-  for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value && value.trim() !== "") {
+      params.set(key, value.trim());
+    }
+  }
   return params;
 };
 
@@ -78,16 +140,42 @@ interface CostData {
   }[];
 }
 
+interface CompanyItem {
+  id: string;
+  name: string;
+}
+
 export default function TokenReportPage() {
+  const { user: currentUser } = useAuthStore();
+  const isSuperAdmin = currentUser?.role === "super_admin";
+
   const [period, setPeriod] = useState("30");
   const [filters, setFilters] = useState<TokenFilters>(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState<TokenFilters>(emptyFilters);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [cost, setCost] = useState<CostData | null>(null);
+  const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
+  // Load companies for super admin filter
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    async function loadCompanies() {
+      try {
+        const res = await apiClient.get("/admin/companies");
+        setCompanies(res?.data || []);
+      } catch (err) {
+        console.error("Failed to load companies:", err);
+      }
+    }
+    loadCompanies();
+  }, [isSuperAdmin]);
+
+  // Load report data
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -95,7 +183,7 @@ export default function TokenReportPage() {
         const params = paramsForFilters(appliedFilters, period);
         params.set("groupBy", "day");
         params.set("page", String(page));
-        params.set("limit", "10");
+        params.set("limit", String(limit));
         const query = params.toString();
 
         const [usageRes, costRes] = await Promise.all([
@@ -113,27 +201,61 @@ export default function TokenReportPage() {
       }
     }
     fetchData();
-  }, [appliedFilters, page, period]);
+  }, [appliedFilters, page, limit, period]);
+
+  const handleApplyFilter = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    setAppliedFilters(filters);
+  };
+
+  const handleResetFilter = () => {
+    setFilters(emptyFilters);
+    setAppliedFilters(emptyFilters);
+    setPage(1);
+  };
+
+  const handleFilterByCompany = (companyId: string) => {
+    const updated = { ...appliedFilters, companyId };
+    setFilters(updated);
+    setAppliedFilters(updated);
+    setPage(1);
+  };
 
   const exportCsv = async () => {
+    setExporting(true);
     try {
       const params = paramsForFilters(appliedFilters, period);
       const blob = await apiClient.get(`/admin/token-usage/export?${params}`);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "token-usage-export.csv";
+      link.download = `token-usage-export-${new Date().toISOString().slice(0, 10)}.csv`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to export token usage:", err);
+    } finally {
+      setExporting(false);
     }
   };
 
-  if (loading) {
+  const isCerebras = (model: string) =>
+    model.includes("gpt-oss") || model.includes("llama3") || model.includes("zai");
+  const isGPT = (model: string) =>
+    model.toLowerCase().includes("gpt-4") || model.toLowerCase().includes("gpt-3");
+
+  const totalTokens = usage?.summary.totalTokens || 0;
+  const totalPromptTokens = usage?.summary.totalPromptTokens || 0;
+  const totalCompletionTokens = usage?.summary.totalCompletionTokens || 0;
+  const totalRequests = usage?.summary.totalRequests || 0;
+  const estimatedCost = cost?.totalEstimatedUSD || 0;
+  const companyStats = usage?.byCompany || [];
+
+  if (loading && !usage) {
     return (
       <div className="p-6">
-        <PageHeader title="Token Usage Report" subtitle="Loading analytics..." />
+        <PageHeader title="Token Usage & Cost Report" subtitle="Memuat analitik..." />
         <AutoSkeleton isLoading={true} type="card">
           <div />
         </AutoSkeleton>
@@ -141,65 +263,258 @@ export default function TokenReportPage() {
     );
   }
 
-  // Pisahkan Cerebras vs GPT secara visual
-  const isCerebras = (model: string) => model.includes('gpt-oss') || model.includes('llama3') || model.includes('zai');
-  const isGPT = (model: string) => model.toLowerCase().includes('gpt-4') || model.toLowerCase().includes('gpt-3');
-
-  const totalTokens = usage?.summary.totalTokens || 0;
-  const totalRequests = usage?.summary.totalRequests || 0;
-  const estimatedCost = cost?.totalEstimatedUSD || 0;
+  const startRecord = usage?.meta?.total ? (page - 1) * limit + 1 : 0;
+  const endRecord = usage?.meta?.total ? Math.min(page * limit, usage.meta.total) : 0;
 
   return (
     <div className="p-6 space-y-6">
       <PageHeader
-        title="Token Usage Report"
-        subtitle="Analisis dan statistik komprehensif penggunaan Cerebras & OpenAI GPT"
-        icon={<Cpu className="w-5 h-5" />}
-        actions={<PeriodSwitcher options={[{ key: "7", label: "7 Hari Terakhir" }, { key: "30", label: "30 Hari Terakhir" }, { key: "90", label: "90 Hari Terakhir" }, { key: "all", label: "Semua" }]} value={period} onChange={setPeriod} />}
+        title="Laporan Penggunaan & Biaya Token AI"
+        subtitle="Statistik volume token, estimasi biaya multi-provider (Cerebras & OpenAI GPT), dan rincian per perusahaan"
+        icon={<Cpu className="w-5 h-5 text-[var(--color-accent)]" />}
+        actions={
+          <PeriodSwitcher
+            options={[
+              { key: "7", label: "7 Hari Terakhir" },
+              { key: "30", label: "30 Hari Terakhir" },
+              { key: "90", label: "90 Hari Terakhir" },
+              { key: "all", label: "Semua Waktu" }
+            ]}
+            value={period}
+            onChange={(val) => {
+              setPeriod(val);
+              setPage(1);
+            }}
+          />
+        }
       />
 
-      <form className="card p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-end" onSubmit={event => { event.preventDefault(); setPage(1); setAppliedFilters(filters); }}>
-        <label className="text-xs">Team<input className="input mt-1 w-full" value={filters.team} onChange={event => setFilters({ ...filters, team: event.target.value })} /></label>
-        <label className="text-xs">Course<input className="input mt-1 w-full" value={filters.course} onChange={event => setFilters({ ...filters, course: event.target.value })} /></label>
-        <label className="text-xs">From<input type="date" className="input mt-1 w-full" value={filters.from} onChange={event => setFilters({ ...filters, from: event.target.value })} /></label>
-        <label className="text-xs">To<input type="date" className="input mt-1 w-full" value={filters.to} onChange={event => setFilters({ ...filters, to: event.target.value })} /></label>
-        <label className="text-xs">Min score<input type="number" min="0" max="100" className="input mt-1 w-full" value={filters.minScore} onChange={event => setFilters({ ...filters, minScore: event.target.value })} /></label>
-        <label className="text-xs">Max score<input type="number" min="0" max="100" className="input mt-1 w-full" value={filters.maxScore} onChange={event => setFilters({ ...filters, maxScore: event.target.value })} /></label>
-        <div className="flex gap-2"><button className="btn btn-primary btn-sm" type="submit">Filter</button><button className="btn btn-secondary btn-sm" type="button" onClick={() => { setFilters(emptyFilters); setAppliedFilters(emptyFilters); setPage(1); }}>Reset</button><button className="btn btn-secondary btn-sm" type="button" onClick={exportCsv}>Export CSV</button></div>
+      <form
+        className="card p-5 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)] space-y-4"
+        onSubmit={handleApplyFilter}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border-light)] pb-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+            <Filter className="w-4 h-4 text-[var(--color-accent)]" />
+            <span>Filter & Pencarian Lanjutan</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-secondary btn-sm flex items-center gap-1.5"
+              type="button"
+              onClick={handleResetFilter}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset
+            </button>
+            <button
+              className="btn btn-primary btn-sm flex items-center gap-1.5"
+              type="submit"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Terapkan Filter
+            </button>
+            <button
+              className="btn btn-secondary btn-sm flex items-center gap-1.5"
+              type="button"
+              disabled={exporting}
+              onClick={exportCsv}
+            >
+              <Download className="w-3.5 h-3.5" />
+              {exporting ? "Mengekspor..." : "Export CSV"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Pencarian Kata Kunci
+            </label>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <input
+                type="text"
+                placeholder="Cari user, tim, course, perusahaan..."
+                className="input w-full pl-9"
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {isSuperAdmin && (
+            <div>
+              <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+                Perusahaan
+              </label>
+              <select
+                className="input w-full"
+                value={filters.companyId}
+                onChange={(e) => setFilters({ ...filters, companyId: e.target.value })}
+              >
+                <option value="">Semua Perusahaan</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              AI Model
+            </label>
+            <select
+              className="input w-full"
+              value={filters.model}
+              onChange={(e) => setFilters({ ...filters, model: e.target.value })}
+            >
+              <option value="">Semua Model</option>
+              <option value="gpt-4o">GPT-4o (OpenAI)</option>
+              <option value="gpt-4o-mini">GPT-4o Mini (OpenAI)</option>
+              <option value="gpt-oss-120b">Cerebras OSS 120B</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Nama Tim
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Sales Alpha"
+              className="input w-full"
+              value={filters.team}
+              onChange={(e) => setFilters({ ...filters, team: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Judul Modul / Course
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Handling Objections"
+              className="input w-full"
+              value={filters.course}
+              onChange={(e) => setFilters({ ...filters, course: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Dari Tanggal
+            </label>
+            <input
+              type="date"
+              className="input w-full"
+              value={filters.from}
+              onChange={(e) => setFilters({ ...filters, from: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Sampai Tanggal
+            </label>
+            <input
+              type="date"
+              className="input w-full"
+              value={filters.to}
+              onChange={(e) => setFilters({ ...filters, to: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Min. Nilai Score
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              placeholder="0"
+              className="input w-full"
+              value={filters.minScore}
+              onChange={(e) => setFilters({ ...filters, minScore: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[var(--color-text-muted)] block mb-1">
+              Maks. Nilai Score
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              placeholder="100"
+              className="input w-full"
+              value={filters.maxScore}
+              onChange={(e) => setFilters({ ...filters, maxScore: e.target.value })}
+            />
+          </div>
+        </div>
       </form>
 
-      {/* Grid Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           label="Total Token Terpakai"
           value={totalTokens.toLocaleString()}
           icon={<Sparkles className="w-5 h-5 text-[var(--color-accent)]" />}
-          footer={<p className="text-xs text-[var(--color-text-muted)]">Input + Output Tokens</p>}
+          footer={
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Input: {totalPromptTokens.toLocaleString()} · Output: {totalCompletionTokens.toLocaleString()}
+            </p>
+          }
         />
         <StatCard
           label="Estimasi Pengeluaran (USD)"
           value={`$${estimatedCost.toFixed(4)}`}
           icon={<DollarSign className="w-5 h-5 text-emerald-400" />}
-          footer={<p className="text-xs text-[var(--color-text-muted)]">Berdasarkan volume token real-time</p>}
+          footer={
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Berdasarkan tarif token resmi OpenAI & Cerebras
+            </p>
+          }
         />
         <StatCard
-          label="Total Request API"
+          label="Total Request AI API"
           value={totalRequests.toLocaleString()}
           icon={<Activity className="w-5 h-5 text-cyan-400" />}
-          footer={<p className="text-xs text-[var(--color-text-muted)]">Rata-rata {totalRequests > 0 ? Math.round(totalTokens / totalRequests) : 0} token per request</p>}
+          footer={
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Rata-rata {totalRequests > 0 ? Math.round(totalTokens / totalRequests) : 0} token / request
+            </p>
+          }
+        />
+        <StatCard
+          label={isSuperAdmin ? "Perusahaan Terdata" : "Perusahaan Anda"}
+          value={isSuperAdmin ? companyStats.length.toString() : (currentUser?.companyName || "Aktif")}
+          icon={<Building2 className="w-5 h-5 text-indigo-400" />}
+          footer={
+            <p className="text-xs text-[var(--color-text-muted)]">
+              {isSuperAdmin ? "Perusahaan aktif bertransaksi token" : "Penyewa tenant aktif"}
+            </p>
+          }
         />
       </div>
 
-      {/* Area Chart: Penggunaan Harian */}
       <div className="card p-6 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
-        <h2 className="text-lg font-semibold mb-4 text-[var(--color-text)]">Tren Penggunaan Token Harian</h2>
+        <h2 className="text-lg font-semibold mb-4 text-[var(--color-text)]">
+          Tren Penggunaan Token Harian
+        </h2>
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={usage?.byDay || []}>
               <defs>
                 <linearGradient id="colorTokens" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-light)" />
@@ -212,14 +527,20 @@ export default function TokenReportPage() {
                   color: "var(--color-text)"
                 }}
               />
-              <Area type="monotone" dataKey="totalTokens" name="Total Token" stroke="var(--color-accent)" fillOpacity={1} fill="url(#colorTokens)" />
+              <Area
+                type="monotone"
+                dataKey="totalTokens"
+                name="Total Token"
+                stroke="var(--color-accent)"
+                fillOpacity={1}
+                fill="url(#colorTokens)"
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
-      {/* Grid: Breakdown Model & Provider */}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Distribusi Token Berdasarkan Model */}
         <div className="card p-6 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
           <h3 className="text-lg font-semibold mb-4 text-[var(--color-text)]">Penggunaan Per Model</h3>
           <div className="h-64">
@@ -227,7 +548,13 @@ export default function TokenReportPage() {
               <BarChart data={usage?.byModel || []} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-light)" />
                 <XAxis type="number" stroke="var(--color-text-muted)" fontSize={12} />
-                <YAxis dataKey="model" type="category" stroke="var(--color-text-muted)" fontSize={12} width={100} />
+                <YAxis
+                  dataKey="model"
+                  type="category"
+                  stroke="var(--color-text-muted)"
+                  fontSize={12}
+                  width={110}
+                />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "var(--color-card-bg)",
@@ -239,7 +566,7 @@ export default function TokenReportPage() {
                   {usage?.byModel.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={isGPT(entry.model) ? "#10B981" : "#8B5CF6"} // Emerald untuk GPT, Purple untuk Cerebras
+                      fill={isGPT(entry.model) ? "#10B981" : "#8B5CF6"}
                     />
                   ))}
                 </Bar>
@@ -248,17 +575,18 @@ export default function TokenReportPage() {
           </div>
         </div>
 
-        {/* Tabel Rekapitulasi Cost & Provider */}
         <div className="card p-6 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
-          <h3 className="text-lg font-semibold mb-4 text-[var(--color-text)]">Rincian Biaya per Provider</h3>
+          <h3 className="text-lg font-semibold mb-4 text-[var(--color-text)]">
+            Rincian Biaya per Provider
+          </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
                   <th className="pb-3 font-semibold">Model</th>
                   <th className="pb-3 font-semibold">Provider</th>
-                  <th className="pb-3 font-semibold text-right">Prompt Tokens</th>
-                  <th className="pb-3 font-semibold text-right">Completion Tokens</th>
+                  <th className="pb-3 font-semibold text-right">Prompt</th>
+                  <th className="pb-3 font-semibold text-right">Completion</th>
                   <th className="pb-3 font-semibold text-right">Est. Cost (USD)</th>
                 </tr>
               </thead>
@@ -277,9 +605,15 @@ export default function TokenReportPage() {
                           {provider}
                         </span>
                       </td>
-                      <td className="py-3.5 text-right text-[var(--color-text-muted)]">{item.promptTokens.toLocaleString()}</td>
-                      <td className="py-3.5 text-right text-[var(--color-text-muted)]">{item.completionTokens.toLocaleString()}</td>
-                      <td className="py-3.5 text-right font-semibold text-[var(--color-text)]">${item.estimatedCostUSD.toFixed(5)}</td>
+                      <td className="py-3.5 text-right text-[var(--color-text-muted)]">
+                        {item.promptTokens.toLocaleString()}
+                      </td>
+                      <td className="py-3.5 text-right text-[var(--color-text-muted)]">
+                        {item.completionTokens.toLocaleString()}
+                      </td>
+                      <td className="py-3.5 text-right font-semibold text-[var(--color-text)]">
+                        ${item.estimatedCostUSD.toFixed(5)}
+                      </td>
                     </tr>
                   );
                 })}
@@ -296,24 +630,266 @@ export default function TokenReportPage() {
         </div>
       </div>
 
-      <section className="card overflow-hidden">
-        <div className="p-4 border-b border-[var(--color-border)]"><h2 className="font-semibold">Token request details</h2></div>
-        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--color-border)] text-[var(--color-text-muted)]"><th className="p-3">Date</th><th className="p-3">User / Team</th><th className="p-3">Course</th><th className="p-3">Score</th><th className="p-3">Service / Model</th><th className="p-3 text-right">Tokens</th></tr></thead><tbody>
-          {usage?.logs.map(log => <tr key={log.id} className="border-b border-[var(--color-border-light)]"><td className="p-3 whitespace-nowrap">{new Date(log.createdAt).toLocaleString()}</td><td className="p-3">{log.userName || "-"}<div className="text-xs text-[var(--color-text-muted)]">{log.teamName}</div></td><td className="p-3">{log.courseTitle || "-"}</td><td className="p-3">{log.score ?? "-"}</td><td className="p-3">{log.service}<div className="text-xs text-[var(--color-text-muted)]">{log.model}</div></td><td className="p-3 text-right">{log.totalTokens.toLocaleString()}</td></tr>)}
-          {(!usage?.logs.length) && <tr><td colSpan={6} className="p-6 text-center text-[var(--color-text-muted)]">No token logs match these filters.</td></tr>}
-        </tbody></table></div>
-        <div className="flex items-center justify-between gap-3 p-4"><span className="text-xs text-[var(--color-text-muted)]">{usage?.meta.total ?? 0} requests · Page {page} of {totalPages}</span><div className="flex gap-2"><button className="btn btn-secondary btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(value => value - 1)}>Previous</button><button className="btn btn-secondary btn-sm" disabled={page >= totalPages || loading} onClick={() => setPage(value => value + 1)}>Next</button></div></div>
+      <section className="card p-6 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-lg font-semibold text-[var(--color-text)]">
+              Rekapitulasi Penggunaan & Biaya per Perusahaan
+            </h3>
+          </div>
+          <span className="text-xs text-[var(--color-text-muted)]">
+            Total {companyStats.length} Perusahaan Terdata
+          </span>
+        </div>
+
+        {!companyStats.length ? (
+          <p className="text-sm text-[var(--color-text-muted)] py-4 text-center">
+            Belum ada data transaksi per perusahaan untuk filter yang dipilih.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] text-xs text-[var(--color-text-muted)] uppercase tracking-wider">
+                  <th className="pb-3 font-semibold">Nama Perusahaan</th>
+                  <th className="pb-3 font-semibold text-right">Requests</th>
+                  <th className="pb-3 font-semibold text-right">Prompt Tokens</th>
+                  <th className="pb-3 font-semibold text-right">Completion Tokens</th>
+                  <th className="pb-3 font-semibold text-right">Total Tokens</th>
+                  <th className="pb-3 font-semibold text-right">Est. Biaya (USD)</th>
+                  {isSuperAdmin && <th className="pb-3 font-semibold text-center w-28">Aksi</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border-light)]">
+                {companyStats.map((item) => (
+                  <tr key={item.companyId} className="hover:bg-white/5 transition-colors">
+                    <td className="py-3.5 font-medium text-[var(--color-text)]">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-[var(--color-text-muted)]" />
+                        <span>{item.companyName}</span>
+                      </div>
+                    </td>
+                    <td className="py-3.5 text-right text-[var(--color-text-muted)]">
+                      {item.requests.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 text-right text-[var(--color-text-muted)]">
+                      {item.promptTokens.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 text-right text-[var(--color-text-muted)]">
+                      {item.completionTokens.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 text-right font-semibold text-[var(--color-text)]">
+                      {item.totalTokens.toLocaleString()}
+                    </td>
+                    <td className="py-3.5 text-right font-semibold text-emerald-400">
+                      ${item.estimatedCostUSD.toFixed(5)}
+                    </td>
+                    {isSuperAdmin && (
+                      <td className="py-3.5 text-center">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-xs inline-flex items-center gap-1"
+                          onClick={() => handleFilterByCompany(item.companyId)}
+                          title={`Filter hanya untuk ${item.companyName}`}
+                        >
+                          <span>Pilih</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
-      <section className="card p-6">
-        <h3 className="text-lg font-semibold mb-4 text-[var(--color-text)]">Pemakaian Token per Layanan</h3>
+
+      <section className="card overflow-hidden bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
+        <div className="p-4 border-b border-[var(--color-border)] flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-[var(--color-text)]">Token Request Details (Log)</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Rincian setiap interaksi percakapan simulasi AI dan penilaian performa
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[var(--color-text-muted)]">Tampilkan per halaman:</span>
+            <select
+              className="input input-sm py-1 px-2 text-xs"
+              value={limit}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setPage(1);
+              }}
+            >
+              <option value="10">10 baris</option>
+              <option value="25">25 baris</option>
+              <option value="50">50 baris</option>
+              <option value="100">100 baris</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-[var(--color-border)] text-xs text-[var(--color-text-muted)] uppercase tracking-wider bg-white/5">
+                <th className="p-3">Waktu</th>
+                {isSuperAdmin && <th className="p-3">Perusahaan</th>}
+                <th className="p-3">User & Tim</th>
+                <th className="p-3">Course / Modul</th>
+                <th className="p-3 text-center">Score</th>
+                <th className="p-3">Layanan & Model</th>
+                <th className="p-3 text-right">Tokens</th>
+                <th className="p-3 text-right">Est. Cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border-light)]">
+              {usage?.logs.map((log) => {
+                const scoreColor =
+                  log.score !== null && log.score !== undefined
+                    ? log.score >= 80
+                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                      : log.score >= 60
+                      ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                    : "text-[var(--color-text-muted)]";
+
+                return (
+                  <tr key={log.id} className="hover:bg-white/5 transition-colors">
+                    <td className="p-3 whitespace-nowrap text-xs text-[var(--color-text-muted)]">
+                      {new Date(log.createdAt).toLocaleString("id-ID", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
+                    </td>
+                    {isSuperAdmin && (
+                      <td className="p-3">
+                        <span className="font-medium text-[var(--color-text)]">
+                          {log.companyName || "-"}
+                        </span>
+                      </td>
+                    )}
+                    <td className="p-3">
+                      <div className="font-medium text-[var(--color-text)]">{log.userName || "-"}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">{log.teamName || "Tanpa Tim"}</div>
+                    </td>
+                    <td className="p-3 max-w-[200px] truncate" title={log.courseTitle || "-"}>
+                      {log.courseTitle || "-"}
+                    </td>
+                    <td className="p-3 text-center">
+                      {log.score !== null && log.score !== undefined ? (
+                        <span className={`px-2 py-0.5 text-xs rounded-full font-semibold ${scoreColor}`}>
+                          {log.score}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[var(--color-text-muted)]">-</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <div className="font-medium text-[var(--color-text)]">{log.service}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">{log.model}</div>
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="font-medium text-[var(--color-text)]">
+                        {log.totalTokens.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-[var(--color-text-muted)]">
+                        {log.promptTokens?.toLocaleString() || 0} in / {log.completionTokens?.toLocaleString() || 0} out
+                      </div>
+                    </td>
+                    <td className="p-3 text-right font-medium text-emerald-400">
+                      ${(log.estimatedCostUSD || 0).toFixed(5)}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!usage?.logs.length && (
+                <tr>
+                  <td
+                    colSpan={isSuperAdmin ? 8 : 7}
+                    className="p-8 text-center text-[var(--color-text-muted)]"
+                  >
+                    Tidak ada log request token yang cocok dengan filter yang ditentukan.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-[var(--color-border)]">
+          <span className="text-xs text-[var(--color-text-muted)]">
+            Menampilkan <span className="font-medium text-[var(--color-text)]">{startRecord}</span> -{" "}
+            <span className="font-medium text-[var(--color-text)]">{endRecord}</span> dari{" "}
+            <span className="font-medium text-[var(--color-text)]">{usage?.meta?.total ?? 0}</span> log request ·
+            Halaman {page} dari {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-secondary btn-sm flex items-center gap-1"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((val) => Math.max(val - 1, 1))}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Sebelumnya</span>
+            </button>
+            <div className="flex items-center gap-1 px-1">
+              <span className="text-xs px-2 py-1 rounded bg-white/10 font-medium">
+                {page} / {totalPages}
+              </span>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm flex items-center gap-1"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((val) => Math.min(val + 1, totalPages))}
+            >
+              <span>Berikutnya</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card p-6 bg-[var(--color-card-bg)] rounded-xl border border-[var(--color-border)]">
+        <div className="flex items-center gap-2 mb-4">
+          <Layers className="w-5 h-5 text-[var(--color-accent)]" />
+          <h3 className="text-lg font-semibold text-[var(--color-text)]">
+            Pemakaian Token per Layanan Sistem
+          </h3>
+        </div>
         {!usage?.byService.length ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Belum ada log penggunaan pada periode ini.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Belum ada log penggunaan pada periode ini.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead><tr className="border-b border-[var(--color-border)] text-sm text-[var(--color-text-muted)]"><th className="pb-3">Layanan</th><th className="pb-3 text-right">Request</th><th className="pb-3 text-right">Total token</th></tr></thead>
+              <thead>
+                <tr className="border-b border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
+                  <th className="pb-3 font-semibold">Layanan</th>
+                  <th className="pb-3 font-semibold text-right">Total Request</th>
+                  <th className="pb-3 font-semibold text-right">Total Token Terpakai</th>
+                </tr>
+              </thead>
               <tbody className="divide-y divide-[var(--color-border-light)] text-sm">
-                {usage.byService.map(item => <tr key={item.service}><td className="py-3 font-medium text-[var(--color-text)]">{item.service}</td><td className="py-3 text-right">{item.requests.toLocaleString()}</td><td className="py-3 text-right">{item.totalTokens.toLocaleString()}</td></tr>)}
+                {usage.byService.map((item) => (
+                  <tr key={item.service} className="hover:bg-white/5 transition-colors">
+                    <td className="py-3 font-medium text-[var(--color-text)]">{item.service}</td>
+                    <td className="py-3 text-right text-[var(--color-text-muted)]">
+                      {item.requests.toLocaleString()}
+                    </td>
+                    <td className="py-3 text-right font-semibold text-[var(--color-text)]">
+                      {item.totalTokens.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

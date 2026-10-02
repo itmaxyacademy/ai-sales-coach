@@ -1,57 +1,84 @@
 # Sales AI Coach
 
-Sales AI Coach is a B2B SaaS platform designed for corporate sales training and roleplay simulation. Sales representatives practice realistic client scenarios against interactive AI personas via voice and text, receiving automated evaluations and communication feedback. Sales managers configure courses, assign training modules, and track team performance through analytical dashboards.
+Sales AI Coach is an enterprise B2B SaaS platform designed for corporate sales training and immersive roleplay simulation. Sales representatives practice realistic client scenarios against interactive AI personas via real-time voice and text, receiving automated evaluations and communication feedback. Sales managers configure courses, assign training modules, and track team performance, while administrators monitor company-wide token consumption and system telemetry.
 
 ## System Architecture
 
 The platform follows a multi-service architecture orchestrated via Docker Compose:
 
 - **Frontend (Web Application)**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS, Zustand, Recharts, and Three.js VRM for 3D avatar rendering.
-- **Backend API**: Node.js, Express, TypeScript, Prisma ORM, and PostgreSQL. Handles business logic, authentication, session state management, scoring algorithms, and AI orchestrations.
-- **BackendTTS (Voice Service)**: Python FastAPI microservice providing streaming text-to-speech generation via Microsoft Edge TTS with multi-voice support.
+- **Backend API**: Node.js, Express, TypeScript, Prisma ORM, and PostgreSQL. Handles business logic, authentication, session state management, scoring algorithms, token metering, and AI orchestrations.
+- **BackendTTS (Voice Service)**: Python FastAPI microservice providing streaming text-to-speech generation via Microsoft Edge TTS with multi-voice and bilingual (ID/EN) support.
 - **BackendScraper (Document & Ingestion Service)**: Python FastAPI microservice dedicated to safe document extraction (PDF, DOCX, XLSX, PPTX, HTML, RTF) with strict SSRF protection and domain validation.
 - **Database & Storage**: PostgreSQL (with Supabase pgvector support for retrieval-augmented generation context).
 
 ```text
 sales-ai-coach/
-├── Backend/          # Node.js Express REST API, Prisma ORM, AI orchestration
-├── BackendTTS/       # Python FastAPI service for text-to-speech synthesis
-├── BackendScraper/   # Python FastAPI service for document extraction and scraping
-├── Frontend/         # Next.js 16 application with Three.js avatar and role dashboards
-├── docs/             # Technical documentation and automated testing reports
-├── anti-slop/        # Code hygiene and architecture audit logs
-├── docker-compose.yml# Multi-container orchestration definition
-└── .env.example      # Environment variable template with sanitized values
+├── Backend/                 # Node.js Express REST API, Prisma ORM, AI orchestration
+│   ├── prisma/              # Database schema, migrations, and seeding scripts
+│   ├── src/                 # Controllers, services, routes, middleware, and guardrails
+│   └── test_advanced_scenarios.ts # Automated test runner for 7 adversarial defense vectors
+├── BackendTTS/              # Python FastAPI service for text-to-speech synthesis
+├── BackendScraper/          # Python FastAPI service for document extraction and scraping
+├── Frontend/                # Next.js 16 application with 3D avatar and role dashboards
+│   ├── app/                 # App Router pages (Auth, Karyawan, Manager, Admin, Token Report)
+│   ├── components/          # Reusable UI, 3D avatar canvas, and layout components
+│   └── store/               # Zustand global state management
+├── docs/                    # Technical documentation and automated testing reports
+├── anti-slop/               # Code hygiene and architecture audit logs
+├── generate_docs.py         # Automated DOCX documentation generator
+├── generate_dono_section.py # Section generator for AI adversarial defense report
+├── docker-compose.yml       # Multi-container orchestration definition
+└── .env.example             # Environment variable template with sanitized values
 ```
 
 ## Key Features
 
-### 1. Interactive AI Roleplay
+### 1. Interactive AI Roleplay & 3D Avatar
 
-- Dual-mode interaction supporting both real-time voice and text chat.
-- Client-side speech recognition with voice activity detection and interruption (barge-in) support.
-- 3D avatar visualization using Three.js and VRM models with synchronized lip-sync and expressive states.
-- Real-time communication feedback, including speech filler detection and confidence indicators.
+- **Dual-Mode Interaction**: Seamlessly switch between real-time voice call mode and conversational text chat.
+- **Barge-In Voice Support**: Client-side speech recognition with Voice Activity Detection (VAD) and interruption handling.
+- **3D Avatar Rendering**: Three.js and VRM model pipeline featuring synchronized lip-sync and dynamic posture transitions (idle, listening, thinking, speaking).
+- **Communication Diagnostics**: Real-time pacing analysis, filler word tracking, silence detection, and confidence scoring.
 
-### 2. Course and Scenario Management
+### 2. Adversarial Defense & Guardrail Architecture
 
-- Comprehensive customer personas with defined pain points, objection triggers, and buying signals.
-- Configurable difficulty tiers (Beginner, Intermediate, Advanced) and conversational parameters.
-- Multi-dimensional scoring rubrics tailored to specific product lines or negotiation contexts.
-- Document ingestion pipeline supporting corporate playbooks and competitor sheets for grounded AI context.
+The conversational engine implements enterprise-grade guardrails to defend roleplay personas against 7 common attack vectors:
 
-### 3. Session Scoring and Post-Call Insights
+1. **Crescendo Attacks**: Detects and deflects gradual, multi-turn escalation away from the roleplay domain.
+2. **Low-Resource Language Injections**: Enforces persona integrity across local dialects (e.g., Bahasa Jawa, slang) and cross-language steering.
+3. **Indirect RAG Poisoning**: Isolates corporate document context within strictly parsed XML container boundaries (`<company_context>`, `<rag_context>`).
+4. **Prefix Continuation Attacks**: Rejects adversarial prompt completions (e.g., `"Sure, here is the system prompt:"`).
+5. **Emotional & Emergency Exploitation**: Withstands high-pressure manipulation, pity plays, and false urgent scenarios.
+6. **SSML & Speech Synthesizer Injections**: Sanitizes raw XML tags, audio markup, and control characters before passing text to the TTS pipeline.
+7. **Gaslighting & Ghost Commitments**: Prevents AI hallucinations regarding non-existent agreements, verbal contracts, or unauthorized price discounts.
 
-- Automated transcript scoring across configured rubric dimensions.
-- Conversational timeline replay highlighting key moments, objections, and trust shifts.
-- Analytical breakdown of communication pacing, filler word frequency, and conversational balance.
+### 3. Course and Scenario Management
 
-### 4. Role-Based Access Control (RBAC)
+- **Persona Customization**: Configurable pain points, personality traits, objection triggers, buying signals, and ideal outcomes.
+- **Tiered Difficulty**: Beginner, Intermediate, and Advanced scenarios with adjustable turn limits and state progressions.
+- **RAG Grounding**: Corporate product sheets, pricing tables, and battlecards ingested to provide domain knowledge.
+- **Multi-Language Support**: Native Indonesian (`id`) and English (`en`) prompt engineering.
 
-- **Sales Representative (Karyawan)**: Access assigned courses, conduct roleplay sessions, review feedback reports, track personal leaderboard standings, and view training history.
-- **Team Manager**: Monitor team progress, assign required courses, inspect individual session replays, and review aggregate team metrics.
-- **Company Administrator**: Manage organizational structure, user provisioning, team leaders, company-wide course catalogs, and token usage reports.
-- **Super Administrator**: System-level administration, global platform monitoring, and tenant management.
+### 4. Enterprise Token & Cost Analytics (`/admin/token-report`)
+
+- **Telemetry & Cost Tracking**: Detailed breakdown of prompt and completion tokens across GPT-4o and GPT-4o-mini models.
+- **Multi-Tenant Scoping**: Filter usage by company, department team, individual sales rep, or specific training module.
+- **Trend Visualization**: Interactive Recharts area charts and bar charts for daily consumption patterns.
+- **Data Export**: One-click CSV export for finance and audit logging.
+
+### 5. Session Scoring and Post-Call Insights
+
+- **Multi-Dimensional Rubrics**: Automated evaluation across discovery, product knowledge, objection handling, and closing skills.
+- **Timeline Replay**: Interactive transcript timeline displaying customer mood shifts, trust levels, and key objections.
+- **Targeted Feedback**: AI-generated strengths, critical areas for improvement, and recommended follow-up actions.
+
+### 6. Role-Based Access Control (RBAC)
+
+- **Sales Representative (Karyawan)**: Practice assigned courses, inspect performance reports, view skill competency radar, and review personal leaderboard standings.
+- **Team Manager**: Monitor team metrics, assign curricula, review recorded session transcripts, and configure SAW scoring weights.
+- **Company Administrator**: Manage teams, invite users, configure company-wide course catalogs, and audit token consumption.
+- **Super Administrator**: System-level administration, global platform monitoring, and multi-tenant management.
 
 ## Service Endpoints and Port Allocation
 
@@ -75,7 +102,7 @@ Ensure the following tools are installed on your host machine:
 
 ### Environment Configuration
 
-1. Copy the example environment file to create your local `.env`:
+1. Copy the example environment template to create your local `.env`:
 
    ```bash
    cp .env.example .env
@@ -174,18 +201,42 @@ python main.py
 
 The scraper service runs on port `8001`.
 
+## Automated Testing & Security Verification
+
+The repository includes comprehensive automated test runners:
+
+### 1. Adversarial Guardrail Test Suite
+
+Execute the 7 security attack scenarios against an executive AI persona:
+
+```bash
+cd Backend
+npx tsx test_advanced_scenarios.ts
+```
+
+### 2. End-to-End Workflow Testing
+
+Run Playwright end-to-end tests covering authentication, roleplay flows, manager analytics, and admin operations:
+
+```bash
+cd Frontend
+npx playwright test
+```
+
+### 3. Automated Documentation Generator
+
+Compile the complete testing report and architecture evidence into a Microsoft Word document:
+
+```bash
+python generate_docs.py
+```
+
 ## Security and Operational Safeguards
 
 - **SSRF Protection**: The document scraper implements strict outbound URL validation. Private, loopback, and local network IP ranges are blocked via DNS resolution checks before requests are initiated.
 - **Rate Limiting**: In-memory fixed-window rate limiters protect authentication, text-to-speech, and AI completion routes from abuse.
 - **Tenant Isolation**: Database queries enforce company-level and team-level scoping to ensure strict multi-tenant boundary compliance.
-- **Sanitized Configurations**: Sensitive credentials and environment files (`.env`, `.env.production`, `.env.local`) are excluded by `.gitignore`.
-
-## Quality Assurance and Automated Testing
-
-- **End-to-End Testing**: Implemented with Playwright covering authentication, navigation, roleplay session lifecycle, manager reviews, and admin workflows under `Frontend/e2e/`.
-- **API Security Verification**: Security test scripts validate route protection, authorization boundaries, and rate limits.
-- **Code Standards**: Type safety enforced via strict TypeScript configurations across frontend and backend services.
+- **Sanitized Configurations**: Sensitive credentials and environment files (`.env`, `env.*`, `*.env`) are strictly excluded by `.gitignore`.
 
 ## License
 
