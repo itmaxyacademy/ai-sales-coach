@@ -322,6 +322,19 @@ function AvatarModel({
   const clockRef = useRef(0);
   const gestureRef = useRef({ nextAt: 0, startedAt: 0, side: 1, active: false });
 
+  // Natural eye saccades & dynamic gaze target
+  const gazeTargetRef = useRef<THREE.Object3D | null>(null);
+  if (!gazeTargetRef.current) {
+    gazeTargetRef.current = new THREE.Object3D();
+  }
+  const saccadeOffset = useRef(new THREE.Vector3(0, 0, 0));
+  const currentGazePos = useRef(new THREE.Vector3(0, 0, 0));
+  const saccadeTimer = useRef(1.5);
+
+  // TimeScale micro-wandering to break periodic metronome loops
+  const timeScaleTargetRef = useRef(1.0);
+  const timeScaleTimer = useRef(2.5);
+
   // ── Load VRM ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!gltf?.userData?.vrm) return;
@@ -340,11 +353,11 @@ function AvatarModel({
   // ── Eye contact: aim avatar's gaze at the camera ────────────────────────────
   useEffect(() => {
     if (!vrm?.lookAt) return;
-    vrm.lookAt.target = camera;
+    vrm.lookAt.target = gazeTargetRef.current;
     return () => {
       if (vrm?.lookAt) vrm.lookAt.target = undefined as any;
     };
-  }, [vrm, camera]);
+  }, [vrm]);
 
   // ── Load animations ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -477,10 +490,57 @@ function AvatarModel({
       return;
     }
 
+    // Dynamic TimeScale wandering to break periodic metronome loops
+    timeScaleTimer.current -= delta;
+    if (timeScaleTimer.current <= 0) {
+      timeScaleTargetRef.current = 0.94 + Math.random() * 0.11;
+      timeScaleTimer.current = 2.5 + Math.random() * 2.0;
+    }
+    if (mixerRef.current) {
+      mixerRef.current.timeScale = THREE.MathUtils.lerp(
+        mixerRef.current.timeScale,
+        timeScaleTargetRef.current,
+        Math.min(1, 1.8 * delta)
+      );
+    }
+
     mixerRef.current?.update(delta);
     vrm?.update(delta);
 
     if (!vrm) return;
+
+    // Procedural Saccades (organic micro eye-darts)
+    saccadeTimer.current -= delta;
+    if (saccadeTimer.current <= 0) {
+      if (state === "thinking") {
+        saccadeOffset.current.set(
+          (Math.random() - 0.5) * 0.12 - 0.05,
+          0.04 + Math.random() * 0.04,
+          0
+        );
+        saccadeTimer.current = 2.0 + Math.random() * 2.5;
+      } else if (state === "speaking") {
+        saccadeOffset.current.set(
+          (Math.random() - 0.5) * 0.05,
+          (Math.random() - 0.5) * 0.03,
+          0
+        );
+        saccadeTimer.current = 1.2 + Math.random() * 1.8;
+      } else {
+        saccadeOffset.current.set(
+          (Math.random() - 0.5) * 0.04,
+          (Math.random() - 0.5) * 0.02,
+          0
+        );
+        saccadeTimer.current = 1.8 + Math.random() * 2.2;
+      }
+    }
+
+    if (gazeTargetRef.current) {
+      const targetVec = camera.position.clone().add(saccadeOffset.current);
+      currentGazePos.current.lerp(targetVec, Math.min(1, 8 * delta));
+      gazeTargetRef.current.position.copy(currentGazePos.current);
+    }
 
     // #5 - Eye contact: update gaze lookAt target frame-by-frame
     if (vrm.lookAt) {
@@ -620,10 +680,17 @@ function AvatarModel({
     // ── 5. Organic Micro Movements (#6 + #11) ──────────────────────────────────
     const head  = vrm.humanoid?.getNormalizedBoneNode("head" as VRMHumanBoneName);
     const neck  = vrm.humanoid?.getNormalizedBoneNode("neck" as VRMHumanBoneName);
-    const spine = vrm.humanoid?.getNormalizedBoneNode("spine" as VRMHumanBoneName);
+    const spine     = vrm.humanoid?.getNormalizedBoneNode("spine" as VRMHumanBoneName);
+    const chest     = vrm.humanoid?.getNormalizedBoneNode("chest" as VRMHumanBoneName);
+    const lShoulder = vrm.humanoid?.getNormalizedBoneNode("leftShoulder" as VRMHumanBoneName);
+    const rShoulder = vrm.humanoid?.getNormalizedBoneNode("rightShoulder" as VRMHumanBoneName);
 
-    // Add subtle motion on top of the sampled FBX pose; these bones are keyed in every clip.
-    if (spine) spine.rotation.x += Math.sin(t * 1.5) * 0.008;
+    // Multi-frequency organic breathing on spine, chest, & shoulders (breaks single-periodicity)
+    const breathMotion = Math.sin(t * 0.77) * 0.005 + Math.sin(t * 1.39) * 0.003;
+    if (spine) spine.rotation.x += breathMotion;
+    if (chest) chest.rotation.x += breathMotion * 1.2;
+    if (lShoulder) lShoulder.rotation.z += Math.sin(t * 0.77) * 0.004;
+    if (rShoulder) rShoulder.rotation.z -= Math.sin(t * 0.77) * 0.004;
 
     if (head) {
       const { x, y, z } = head.rotation;
@@ -631,26 +698,26 @@ function AvatarModel({
       let offsetY = 0;
       let offsetZ = 0;
       if (state === "idle") {
-        offsetY = Math.sin(t * 0.35) * 0.018 + Math.sin(t * 0.11) * 0.01;
-        offsetX = Math.sin(t * 0.27 + 1.1) * 0.01;
-        offsetZ = Math.sin(t * 0.19 + 0.5) * 0.008;
+        offsetY = Math.sin(t * 0.37) * 0.014 + Math.cos(t * 0.79) * 0.007;
+        offsetX = Math.sin(t * 0.23 + 1.1) * 0.008 + Math.cos(t * 0.51) * 0.004;
+        offsetZ = Math.sin(t * 0.17 + 0.5) * 0.006;
       } else if (state === "thinking") {
-        offsetY = Math.sin(t * 0.22) * 0.025;
-        offsetX = -0.025 - Math.sin(t * 0.16) * 0.012;
-        offsetZ = Math.sin(t * 0.13) * 0.01;
+        offsetY = Math.sin(t * 0.22) * 0.022 + Math.cos(t * 0.63) * 0.008;
+        offsetX = -0.02 - Math.sin(t * 0.16) * 0.01;
+        offsetZ = Math.sin(t * 0.13) * 0.009;
       } else if (state === "speaking") {
-        offsetY = Math.sin(t * 0.6) * 0.015;
-        offsetX = Math.sin(t * 0.48 + 0.8) * 0.01;
-        offsetZ = Math.sin(t * 0.32) * 0.006;
+        offsetY = Math.sin(t * 0.58) * 0.012 + Math.cos(t * 1.14) * 0.006;
+        offsetX = Math.sin(t * 0.44 + 0.8) * 0.009;
+        offsetZ = Math.sin(t * 0.31) * 0.005;
       }
       head.rotation.set(x + offsetX, y + offsetY, z + offsetZ);
     }
 
     if (neck) {
       if (state === "listening") {
-        const nodPulse = Math.pow(Math.max(0, Math.sin(t * 1.8)), 3) * 0.025;
-        neck.rotation.z += 0.018 + Math.sin(t * 0.45) * 0.008;
-        neck.rotation.x += nodPulse + Math.sin(t * 0.32 + 0.5) * 0.008;
+        const nodPulse = Math.pow(Math.max(0, Math.sin(t * 1.7)), 3) * 0.022;
+        neck.rotation.z += 0.015 + Math.sin(t * 0.41) * 0.007;
+        neck.rotation.x += nodPulse + Math.cos(t * 0.29 + 0.5) * 0.007;
       }
     }
 

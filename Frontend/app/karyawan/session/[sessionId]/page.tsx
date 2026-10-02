@@ -1158,7 +1158,7 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Trust */}
           <div className="flex items-center gap-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg px-2.5 py-1.5">
             <Heart className="w-3 h-3 text-[var(--color-danger)] flex-shrink-0" />
@@ -1197,7 +1197,9 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
           {customerState.stage && (
             <span className={`text-[10px] px-2 py-1 rounded-lg font-semibold capitalize border ${
               customerState.stage === "decided" ? "bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30"
+              : customerState.stage === "negotiating" ? "bg-blue-500/10 text-blue-500 border-blue-500/30"
               : customerState.stage === "interested" ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/30"
+              : customerState.stage === "warming" ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
               : "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]"
             }`}>{customerState.stage}</span>
           )}
@@ -1467,6 +1469,26 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                   } animate-pulse`} />
                 )}
 
+                {/* 3D Prospect Live Sentiment & Stage HUD */}
+                <div className="absolute top-3 left-3 flex items-center gap-2 z-20">
+                  <div className="bg-black/65 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 text-[11px] text-white shadow-lg">
+                    <span className="font-semibold text-white/90">{courseName || "AI Prospect"}</span>
+                    <span className="w-1 h-1 rounded-full bg-white/30" />
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      customerState.stage === "decided" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" :
+                      customerState.stage === "negotiating" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" :
+                      customerState.stage === "interested" ? "bg-teal-500/20 text-teal-300 border border-teal-500/30" :
+                      customerState.stage === "warming" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" :
+                      "bg-white/10 text-white/70 border border-white/10"
+                    }`}>
+                      Stage: {customerState.stage || "Cold"}
+                    </span>
+                    <span className="text-[10px] text-white/80 font-medium">
+                      Trust: <strong className="text-white">{trustPct}%</strong>
+                    </span>
+                  </div>
+                </div>
+
                 <div className="absolute bottom-3 left-3 flex items-center gap-2 z-20">
                   <div className="bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg flex items-center gap-1.5">
                     {ttsSpeaking && <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse inline-block" />}
@@ -1608,6 +1630,34 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
             >
               <ChevronRight className="w-4 h-4" />
             </button>
+          </div>
+
+          {/* Prospect Live Status & Trust Meter in Conversation Sidebar */}
+          <div className="px-3 py-2 bg-[var(--color-bg)]/80 border-b border-[var(--color-border)] flex items-center justify-between gap-2 flex-shrink-0 text-[11px]">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[10px] text-[var(--color-text-subtle)] font-medium">Stage:</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold capitalize border truncate ${
+                customerState.stage === "decided" ? "bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30" :
+                customerState.stage === "negotiating" ? "bg-blue-500/10 text-blue-500 border-blue-500/30" :
+                customerState.stage === "interested" ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/30" :
+                customerState.stage === "warming" ? "bg-amber-500/10 text-amber-500 border-amber-500/30" :
+                "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]"
+              }`}>
+                {customerState.stage || "Cold"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-[10px] text-[var(--color-text-subtle)] font-medium">Trust:</span>
+              <div className="w-14 h-1.5 bg-[var(--color-border)] rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    trustPct > 60 ? "bg-[var(--color-success)]" : trustPct > 30 ? "bg-[var(--color-warning)]" : "bg-[var(--color-danger)]"
+                  }`}
+                  style={{ width: `${trustPct}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-bold text-[var(--color-text)] w-7 text-right">{trustPct}%</span>
+            </div>
           </div>
 
           <div className="flex flex-col flex-1 overflow-hidden">
