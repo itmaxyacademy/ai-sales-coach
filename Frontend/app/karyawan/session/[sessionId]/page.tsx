@@ -31,6 +31,23 @@ const AIAvatar3D = dynamic(
   }
 );
 
+// WASM must match the installed @mediapipe/tasks-vision JS version (0.10.17); "@latest" can drift and break.
+const MEDIAPIPE_WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm";
+
+// MediaPipe's WASM prints informational lines (XNNPACK delegate, OpenGL notice) to stderr,
+// which the browser reports as console.error and Next dev surfaces as a runtime error.
+const MEDIAPIPE_BENIGN_LOG = /XNNPACK|xnnpack|TensorFlow Lite|OpenGL error checking|face_landmarker_graph|gl_context/;
+let mediaPipeLogsFiltered = false;
+function filterMediaPipeLogs() {
+  if (mediaPipeLogsFiltered || typeof window === "undefined") return;
+  mediaPipeLogsFiltered = true;
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args.some(a => typeof a === "string" && MEDIAPIPE_BENIGN_LOG.test(a))) return;
+    originalError.apply(console, args);
+  };
+}
+
 interface Message {
   role: "user" | "assistant" | "hint";
   content: string;
@@ -146,6 +163,10 @@ export default function SessionPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
+  const ttsSpeakingRef = useRef(false);
+  const pausedForTtsRef = useRef(false);
+  const resumeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const loudSinceRef = useRef(0);
   const inputRef = useRef("");
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -481,11 +502,10 @@ useEffect(() => {
   // Lazy-load MediaPipe only in browser (no SSR)
   const initFaceLandmarker = useCallback(async () => {
     if (faceLandmarkerRef.current) return;
+    filterMediaPipeLogs();
     try {
       const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-      const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-      );
+      const filesetResolver = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
       faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(filesetResolver, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
@@ -500,9 +520,7 @@ useEffect(() => {
       // GPU unavailable, fallback to CPU
       try {
         const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-        const filesetResolver = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
+        const filesetResolver = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
         faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(filesetResolver, {
           baseOptions: {
             modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
@@ -737,12 +755,12 @@ useEffect(() => {
 
   // ── Voice Activity Detection & Interruption (Barge-in) ────
   const triggerBargeIn = useCallback(() => {
-    if (FEATURE_FLAGS.FULL_DUPLEX_VOICE && ttsSpeaking) {
+    if (FEATURE_FLAGS.FULL_DUPLEX_VOICE && ttsSpeakingRef.current) {
       bargeIn();
       setBargeInCount(prev => prev + 1);
       toast.info("⚡ Interupsi alami: Suara prospek dihentikan seketika", SESSION_TOAST_OPTIONS);
     }
-  }, [ttsSpeaking, bargeIn]);
+  }, [bargeIn]);
 
   const startMicVisualizer = (stream: MediaStream) => {
     micStreamRef.current = stream;
@@ -761,12 +779,20 @@ useEffect(() => {
       const tick = () => {
         analyser.getByteFrequencyData(data);
         const avg = data.reduce((a, b) => a + b, 0) / data.length;
-        const isSpeakingNow = avg > 14;
+        const aiTalking = ttsSpeakingRef.current;
+        // While the AI talks, speaker leakage raises the mic level; require a much louder, sustained voice.
+        const isSpeakingNow = avg > (aiTalking ? 45 : 14);
         setUserSpeakingAnim(isSpeakingNow);
 
-        // Instant Barge-In detection via audio amplitude threshold
-        if (isSpeakingNow && ttsSpeaking) {
-          triggerBargeIn();
+        if (isSpeakingNow && aiTalking) {
+          const now = performance.now();
+          if (!loudSinceRef.current) loudSinceRef.current = now;
+          if (now - loudSinceRef.current > 350) {
+            loudSinceRef.current = 0;
+            triggerBargeIn();
+          }
+        } else {
+          loudSinceRef.current = 0;
         }
 
         micAnimFrameRef.current = requestAnimationFrame(tick);
@@ -793,18 +819,20 @@ useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
+    // Never open the recognizer while the AI is talking: it would transcribe the AI's own voice.
+    // The ttsSpeaking effect restarts it once the AI finishes.
+    if (ttsSpeakingRef.current) {
+      pausedForTtsRef.current = true;
+      return;
+    }
+
     const recognition = new SpeechRecognition();
     recognition.lang = language === "en" ? "en-US" : "id-ID";
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    recognition.onstart = () => {
-      if (ttsSpeaking) triggerBargeIn();
-    };
-
     recognition.onresult = (e: any) => {
-      // If AI is speaking, user starting to speak cuts off AI immediately
-      if (ttsSpeaking) triggerBargeIn();
+      if (ttsSpeakingRef.current || pausedForTtsRef.current) return;
 
       const transcript = Array.from(e.results)
         .map((r: any) => r[0].transcript)
@@ -833,7 +861,7 @@ useEffect(() => {
 
     recognition.onend = () => {
       setUserSpeakingAnim(false);
-      if (isListeningRef.current) {
+      if (isListeningRef.current && !pausedForTtsRef.current) {
         try { recognition.start(); } catch {}
       } else {
         setIsListening(false);
@@ -870,7 +898,9 @@ useEffect(() => {
     }
 
     try {
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       startMicVisualizer(micStream);
     } catch (err) {
       console.warn("[Mic] getUserMedia warning:", err);
@@ -893,6 +923,30 @@ useEffect(() => {
       setIsListening(false);
     }
   };
+
+  // Pause the recognizer while the AI speaks (avoids transcribing its voice), resume shortly after.
+  useEffect(() => {
+    ttsSpeakingRef.current = ttsSpeaking;
+    if (ttsSpeaking) {
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
+      if (isListeningRef.current && recognitionRef.current) {
+        pausedForTtsRef.current = true;
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        try { recognitionRef.current.abort(); } catch {}
+        setUserSpeakingAnim(false);
+      }
+    } else if (pausedForTtsRef.current) {
+      resumeTimerRef.current = setTimeout(() => {
+        resumeTimerRef.current = null;
+        pausedForTtsRef.current = false;
+        if (isListeningRef.current) startRecognition();
+      }, 700);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsSpeaking]);
 
   const sendMessage = async () => {
     preload(); // Unlock AudioContext immediately on user gesture

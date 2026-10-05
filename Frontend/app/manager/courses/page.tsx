@@ -309,7 +309,7 @@ export default function ManagerCoursesPage() {
 
               <div>
                 <label className="block text-xs font-semibold mb-1">Tenggat Waktu (Optional)</label>
-                <input type="datetime-local" className="input" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <input type="datetime-local" className="input" value={dueDate} onClick={e => { try { e.currentTarget.showPicker(); } catch {} }} onChange={e => setDueDate(e.target.value)} />
               </div>
               <div>
                 <label className="block text-xs font-semibold mb-1">Catatan Manager (Optional)</label>

@@ -620,6 +620,7 @@ export default function ManagerCourseModulePage() {
                     type="datetime-local" 
                     className="input" 
                     value={dueDate} 
+                    onClick={e => { try { e.currentTarget.showPicker(); } catch {} }}
                     onChange={e => setDueDate(e.target.value)} 
                   />
                 </div>

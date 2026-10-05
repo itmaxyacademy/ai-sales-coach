@@ -620,6 +620,11 @@
 }
 .input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
 .input::placeholder { color: var(--color-text-subtle); }
+/* Native date/time pickers: make the calendar icon visible in dark mode and clearly clickable */
+.dark .input { color-scheme: dark; }
+.input[type="date"], .input[type="datetime-local"], .input[type="time"] { cursor: pointer; }
+.input::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.75; }
+.input::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 /* Search input with icon - ensures no overlap */
 .input-search-wrapper {
   position: relative;

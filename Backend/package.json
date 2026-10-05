@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --no-deprecation --import tsx --watch src/server.ts",
+    "dev": "node --no-deprecation --import tsx --watch-path=src src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
     "lint": "eslint .",

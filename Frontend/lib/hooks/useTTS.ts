@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useAuthStore } from "../../store/authStore";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -334,9 +335,13 @@ export function useTTS() {
     queueRef.current.push(queueItem);
 
     try {
+      const token = useAuthStore.getState().token;
       const response = await fetch(`${BASE_URL}/tts/synthesize`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           text: trimmed,
           voice,

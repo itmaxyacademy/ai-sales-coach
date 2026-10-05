@@ -10,7 +10,7 @@ import { logger } from "./lib/logger.js";
 
 import { errorHandler } from "./middleware/error-handler.js";
 
-import { requireAdminAccess, requireAuth } from "./middleware/auth.js";
+import { requireAdminAccess, requireAuth, optionalAuth } from "./middleware/auth.js";
 
 import { notFound } from "./middleware/not-found.js";
 
@@ -190,7 +190,7 @@ export function createApp() {
 
   app.use("/api/auth", authRateLimit, authRouter);
 
-  app.use("/api/tts", requireAuth, ttsRateLimit, ttsRouter);
+  app.use("/api/tts", optionalAuth, ttsRateLimit, ttsRouter);
 
   app.use("/api/ai", requireAuth, aiRateLimit, aiRouter);
 
