@@ -79,7 +79,7 @@ const ANIMATION_URLS: Record<string, Record<AvatarState, string>> = {
     idle: "/animations/male/idle.fbx",
     listening: "/animations/male/listening.fbx",
     speaking: "/animations/male/speaking.fbx",
-    thinking: "/animations/female/thinking.fbx",
+    thinking: "/animations/male/thinking.fbx",
   },
   F: {
     idle: "/animations/female/idle.fbx",
@@ -340,7 +340,6 @@ function AvatarModel({
   // TimeScale micro-wandering to break periodic metronome loops
   const timeScaleTargetRef = useRef(1.0);
   const timeScaleTimer = useRef(2.5);
-  const armEulerRef = useRef(new THREE.Euler());
 
   // ── Load VRM ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -760,10 +759,17 @@ function AvatarModel({
         offsetY = Math.sin(t * 1.6) * 0.014 + Math.cos(t * 0.7) * 0.006;
         offsetZ = Math.sin(t * 0.9) * 0.008;
       } else if (state === "thinking") {
-        // Reflective head angle (tilted slightly up & to side)
-        offsetY = Math.sin(t * 0.22) * 0.022 + Math.cos(t * 0.63) * 0.008;
-        offsetX = -0.018 - Math.sin(t * 0.16) * 0.008;
-        offsetZ = 0.012 + Math.sin(t * 0.13) * 0.006;
+        if (gender === "M") {
+          // Masculine executive contemplative angle (level head, steady gaze)
+          offsetY = Math.sin(t * 0.18) * 0.012;
+          offsetX = 0.012 + Math.sin(t * 0.14) * 0.006;
+          offsetZ = 0;
+        } else {
+          // Reflective angle for female avatar
+          offsetY = Math.sin(t * 0.22) * 0.022 + Math.cos(t * 0.63) * 0.008;
+          offsetX = -0.018 - Math.sin(t * 0.16) * 0.008;
+          offsetZ = 0.012 + Math.sin(t * 0.13) * 0.006;
+        }
       } else if (state === "listening") {
         // Attentive listening tilt and subtle rhythmic micro-nod
         const listenNod = Math.pow(Math.max(0, Math.sin(t * 1.6)), 2) * 0.016;
@@ -793,26 +799,6 @@ function AvatarModel({
     if (state === "speaking" && currentAction) {
       const dynamicWeight = 0.72 + Math.sin(t * 0.55) * 0.26;
       currentAction.setEffectiveWeight(dynamicWeight);
-    }
-
-    // Natural speaking arm restraint: prevents robotic wide-arm flailing / horizontal T-pose
-    if (state === "speaking" && vrm.humanoid) {
-      const lUpperArm = vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
-      const rUpperArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
-      if (lUpperArm) {
-        armEulerRef.current.setFromQuaternion(lUpperArm.quaternion);
-        if (armEulerRef.current.z > -0.85) {
-          armEulerRef.current.z = -0.85;
-          lUpperArm.quaternion.setFromEuler(armEulerRef.current);
-        }
-      }
-      if (rUpperArm) {
-        armEulerRef.current.setFromQuaternion(rUpperArm.quaternion);
-        if (armEulerRef.current.z < 0.85) {
-          armEulerRef.current.z = 0.85;
-          rUpperArm.quaternion.setFromEuler(armEulerRef.current);
-        }
-      }
     }
 
     // Final single VRM update per frame
