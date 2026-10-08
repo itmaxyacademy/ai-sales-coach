@@ -1,5 +1,5 @@
 # =====================================================
-# Dockerfile — BackendTTS (Supertonic TTS / FastAPI)
+# Dockerfile - BackendTTS (Supertonic TTS / FastAPI)
 # Target: VPS via docker-compose
 # =====================================================
 
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY main.py .
 
 # ── Model Cache (di-mount sebagai volume di compose) ─
-# Catatan: jangan mkdir di sini — Docker volume akan buat folder otomatis
+# Catatan: jangan mkdir di sini - Docker volume akan buat folder otomatis
 # Path ini diset via ENV agar supertonic tahu lokasi cache
 ENV SUPERTONIC_CACHE_DIR=/app/models/cache
 

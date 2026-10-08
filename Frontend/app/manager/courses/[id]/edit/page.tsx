@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { apiClient } from "../../../../../lib/api/client";
 import { ArrowLeft, Save, ChevronRight, ChevronLeft, Check, AlertCircle } from "lucide-react";
+import { AvatarSelector } from "../../../../../components/AvatarSelector";
 
 export default function EditCoursePage() {
   const router = useRouter();
@@ -246,27 +247,14 @@ export default function EditCoursePage() {
                 <input required type="text" className="input" placeholder="e.g. Chief Marketing Officer" value={formData.personaRole} onChange={e => setFormData({...formData, personaRole: e.target.value})} />
               </div>
 
-              {/* ── GENDER FIELD (baru) ── */}
-              <div>
-                <label className="block text-xs font-semibold mb-1">
-                  Persona Gender
-                  <span className="ml-1 text-[var(--color-text-muted)] font-normal">(menentukan suara TTS)</span>
-                </label>
-                <select
-                  className="input"
+              <div className="col-span-2">
+                <AvatarSelector
                   value={formData.personaGender}
-                  onChange={e => setFormData({...formData, personaGender: e.target.value})}
-                >
-                  <option value="M">👨 Male (Pria)</option>
-                  <option value="F">👩 Female (Wanita)</option>
-                </select>
-                <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
-                  AI akan menggunakan {voiceLabel} saat berbicara.
-                </p>
+                  onChange={(gender) => setFormData({ ...formData, personaGender: gender })}
+                />
               </div>
-              {/* ── END GENDER FIELD ── */}
 
-              <div>
+              <div className="col-span-2">
                 <label className="block text-xs font-semibold mb-1">Personality Description</label>
                 <input required type="text" className="input" placeholder="e.g. Skeptical, analytical, direct" value={formData.personaPersonality} onChange={e => setFormData({...formData, personaPersonality: e.target.value})} />
               </div>

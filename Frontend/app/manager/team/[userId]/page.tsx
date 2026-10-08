@@ -58,7 +58,7 @@ export default function MemberDetailPage() {
   };
 
   return (
-    <AutoSkeleton isLoading={loading} type="stats">
+    <AutoSkeleton isLoading={loading} type="profile">
       {data && (() => {
         const saw = data.sawDetail;
         const sawPct = Math.round((saw?.sawScore ?? 0) * 100);

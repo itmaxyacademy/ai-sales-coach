@@ -15,6 +15,7 @@ import {
 import { AutoSkeleton } from "../../../../../components/ui";
 import { formatDate } from "@/lib/dateUtils";
 import { toast } from "sonner";
+import { stopAllHardwareMedia } from "@/lib/utils/mediaCleanup";
 
 interface CategoryScore {
   category: string;
@@ -407,7 +408,10 @@ export default function SessionResultPage() {
       setIsPlayingAudio(false);
     };
 
-    window.speechSynthesis.speak(utterance);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
   }, [result, audioSpeed]);
 
   const toggleAudioReplay = () => {
@@ -429,7 +433,9 @@ export default function SessionResultPage() {
   };
 
   useEffect(() => {
+    stopAllHardwareMedia();
     return () => {
+      stopAllHardwareMedia();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -507,6 +513,42 @@ export default function SessionResultPage() {
       setTimeout(() => setCopiedDraft(false), 2000);
     } catch {
       toast.error("Gagal menyalin draf ke clipboard", { position: "top-center" });
+    }
+  };
+
+  const handleOpenEmailApp = (client: "default" | "gmail" = "default") => {
+    const subject = followupData?.emailSubject || "";
+    const body = followupData?.emailBody || "";
+    const fullDraft = `Subject: ${subject}\n\n${body}`;
+
+    // 1. Selalu salin ke clipboard sebagai jaring pengaman
+    navigator.clipboard.writeText(fullDraft).catch(() => {});
+    setCopiedDraft(true);
+    setTimeout(() => setCopiedDraft(false), 2000);
+
+    if (client === "gmail") {
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(gmailUrl, "_blank", "noopener,noreferrer");
+      toast.success("Membuka Gmail... Draf juga telah disalin ke clipboard!", { position: "top-center" });
+      return;
+    }
+
+    // Default mail client (mailto:)
+    try {
+      const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      const a = document.createElement("a");
+      a.href = mailtoUrl;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      toast.info("Mencoba membuka aplikasi email... Draf juga sudah tersalin ke clipboard jika aplikasi belum terpasang di perangkat Anda.", {
+        position: "top-center",
+        duration: 5000,
+      });
+    } catch {
+      toast.info("Draf telah disalin ke clipboard! Silakan tempel di aplikasi email Anda.", { position: "top-center" });
     }
   };
 
@@ -1244,13 +1286,24 @@ export default function SessionResultPage() {
                       <RefreshCw className={`w-3.5 h-3.5 ${followupLoading ? 'animate-spin' : ''}`} />
                       <span>Regenerasi AI</span>
                     </button>
-                    <a
-                      href={`mailto:?subject=${encodeURIComponent(followupData?.emailSubject || '')}&body=${encodeURIComponent(followupData?.emailBody || '')}`}
-                      className="btn btn-primary btn-xs flex items-center gap-1"
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEmailApp("gmail")}
+                      className="btn btn-secondary btn-xs flex items-center gap-1.5 hover:text-red-500 hover:border-red-400 transition-colors cursor-pointer"
+                      title="Buka langsung di tab Gmail Web baru"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-red-500" />
+                      <span>Buka di Gmail</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEmailApp("default")}
+                      className="btn btn-primary btn-xs flex items-center gap-1.5 cursor-pointer"
+                      title="Buka aplikasi email default perangkat (mailto) dan salin draf"
                     >
                       <Mail className="w-3.5 h-3.5" />
                       <span>Buka Aplikasi Email</span>
-                    </a>
+                    </button>
                   </div>
                 </div>
               )}

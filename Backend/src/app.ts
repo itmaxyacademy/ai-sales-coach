@@ -191,6 +191,7 @@ export function createApp() {
   app.use("/api/auth", authRateLimit, authRouter);
 
   app.use("/api/tts", optionalAuth, ttsRateLimit, ttsRouter);
+  app.use("/tts", optionalAuth, ttsRateLimit, ttsRouter);
 
   app.use("/api/ai", requireAuth, aiRateLimit, aiRouter);
 

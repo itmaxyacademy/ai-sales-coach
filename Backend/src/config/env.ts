@@ -17,8 +17,12 @@ const envSchema = z.object({
   // Scraper microservice
   SCRAPER_PYTHON_URL: z.string().default('http://127.0.0.1:8001'),
 
-  // TTS microservice
+  // TTS microservice & engine settings
   TTS_PYTHON_URL: z.string().default('http://127.0.0.1:5001'),
+  TTS_CACHE_DIR: z.string().optional(),
+  TTS_PYTHON_PATH: z.string().optional(),
+  PIPER_MODEL_DIR: z.string().optional(),
+  PIPER_PATH: z.string().optional(),
 
   // Supabase (untuk pgvector raw queries)
   SUPABASE_URL: z.string(),

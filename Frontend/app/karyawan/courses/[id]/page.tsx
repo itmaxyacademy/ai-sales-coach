@@ -86,7 +86,7 @@ export default function CourseDetailPage() {
   }, [courseId]);
 
   const handleStart = async () => {
-    if (!course) return;
+    if (!course || starting) return;
     setStarting(true);
     try {
       const res = await apiClient.post("/sessions/start", {
@@ -114,7 +114,7 @@ export default function CourseDetailPage() {
   );
 
   return (
-    <AutoSkeleton isLoading={loading} type="card">
+    <AutoSkeleton isLoading={loading} type="course-detail">
       {course && (
         <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}

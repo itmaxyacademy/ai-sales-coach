@@ -82,7 +82,7 @@ export default function SAWConfigPage() {
   if (!loading && !config) return null;
 
   return (
-    <AutoSkeleton isLoading={loading} type="card">
+    <AutoSkeleton isLoading={loading} type="form">
       {config && (
         <div className="p-6 max-w-3xl mx-auto space-y-5">
       <PageHeader

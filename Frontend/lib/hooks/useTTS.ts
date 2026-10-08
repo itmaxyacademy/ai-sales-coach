@@ -107,6 +107,8 @@ interface QueueItem {
 // useTTS hook
 // ---------------------------------------------------------------------------
 
+export type TTSEngine = "edge" | "edge-cache" | "piper" | "webspeech" | null;
+
 interface VisemeSchedule {
   startTime: number;
   endTime: number;
@@ -117,6 +119,9 @@ interface VisemeSchedule {
 export function useTTS() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isEnabled, setIsEnabled] = useState(true);
+  const [engine, setEngine] = useState<TTSEngine>(null);
+  const [voiceWarning, setVoiceWarning] = useState<string | null>(null);
+  const [activeVoice, setActiveVoice] = useState<string | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
@@ -183,11 +188,12 @@ export function useTTS() {
     }
   }, []);
 
-  // Web Speech API Fallback
+  // Web Speech API Fallback with strict gender verification
   const speakWithWebSpeech = useCallback((text: string, gender: string = "M", lang: string = "id") => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
 
     try {
+      setEngine("webspeech");
       const utterance = new SpeechSynthesisUtterance(text);
       const isEnglish = lang.toLowerCase().startsWith("en");
       utterance.lang = isEnglish ? "en-US" : "id-ID";
@@ -196,27 +202,40 @@ export function useTTS() {
       const targetLang = isEnglish ? "en" : "id";
       const isFemale = gender.toUpperCase() === "F";
 
-      const FEMALE_NAMES = ["female", "gadis", "zira", "jenny", "siti", "wanita", "google bahasa indonesia", "microsoft gadis"];
-      const MALE_NAMES   = ["male", "ardi", "david", "guy", "pria", "laki"];
+      const FEMALE_NAMES = ["female", "gadis", "zira", "jenny", "siti", "wanita", "samantha", "victoria", "karen", "susan", "cortana"];
+      const MALE_NAMES   = ["male", "ardi", "david", "guy", "pria", "laki", "george", "mark", "richard", "james", "john", "paul"];
 
       const targetVoices = voices.filter(v => v.lang.toLowerCase().startsWith(targetLang));
+      const pool = targetVoices.length > 0 ? targetVoices : voices;
 
-      // Keep both the requested language and persona gender when the browser falls back.
-      let matchedVoice = targetVoices.find(v => {
-        const n = v.name.toLowerCase();
-        return isFemale ? FEMALE_NAMES.some(k => n.includes(k)) : MALE_NAMES.some(k => n.includes(k));
-      });
-
-      if (!matchedVoice) {
-        const oppositeGenderNames = isFemale ? MALE_NAMES : FEMALE_NAMES;
-        matchedVoice = targetVoices.find(v => !oppositeGenderNames.some(k => v.name.toLowerCase().includes(k)));
+      // Strict matching based on avatar gender
+      let matchedVoice: SpeechSynthesisVoice | undefined;
+      if (isFemale) {
+        matchedVoice = pool.find(v => FEMALE_NAMES.some(k => v.name.toLowerCase().includes(k)));
+        if (matchedVoice) {
+          setVoiceWarning(null);
+        } else {
+          matchedVoice = pool[0];
+          setVoiceWarning("Suara cewek tidak tersedia, memakai suara cadangan");
+        }
+      } else {
+        matchedVoice = pool.find(v => MALE_NAMES.some(k => v.name.toLowerCase().includes(k)));
+        if (matchedVoice) {
+          setVoiceWarning(null);
+        } else {
+          matchedVoice = pool[0];
+          setVoiceWarning("Suara cowok tidak tersedia, memakai suara cadangan");
+        }
       }
 
-      if (!matchedVoice) matchedVoice = targetVoices[0];
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+        setActiveVoice(matchedVoice.name);
+      } else {
+        setActiveVoice("WebSpeech Default");
+      }
 
-      if (matchedVoice) utterance.voice = matchedVoice;
-
-      // Pitch tuning - more extreme separation so male/female sound clearly distinct
+      // Pitch tuning - distinct male and female pitch
       utterance.pitch = isFemale ? 1.2 : 0.7;
       utterance.rate  = 1.0;
 
@@ -346,7 +365,7 @@ export function useTTS() {
           text: trimmed,
           voice,
           gender,
-          lang
+          lang,
         }),
       });
 
@@ -362,6 +381,17 @@ export function useTTS() {
         scheduleReadyItems(gender, lang);
         return;
       }
+
+      const engineHeader = (
+        response.headers.get("x-tts-engine") ||
+        response.headers.get("X-TTS-Engine") ||
+        "edge"
+      ) as TTSEngine;
+      const voiceUsed = response.headers.get("x-voice-used") || response.headers.get("X-Voice-Used") || voice;
+
+      setEngine(engineHeader);
+      setActiveVoice(voiceUsed);
+      setVoiceWarning(null); // Backend succeeded, clear any fallback warnings
 
       const arrayBuffer = await response.arrayBuffer();
       if (arrayBuffer && arrayBuffer.byteLength > 100) {
@@ -415,7 +445,6 @@ export function useTTS() {
     });
   }, [stop]);
 
-
   const preload = useCallback(async () => {
     initAudioCtx();
   }, [initAudioCtx]);
@@ -434,5 +463,16 @@ export function useTTS() {
     }
   }, []);
 
-  return { isSpeaking, isEnabled, speak, stop, bargeIn, preload, toggleEnabled };
+  return {
+    isSpeaking,
+    isEnabled,
+    engine,
+    voiceWarning,
+    activeVoice,
+    speak,
+    stop,
+    bargeIn,
+    preload,
+    toggleEnabled,
+  };
 }

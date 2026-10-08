@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { stopAllHardwareMedia } from '../lib/utils/mediaCleanup';
 
 // Role baru sesuai backend
 export type Role = 'karyawan' | 'manager' | 'company_admin' | 'super_admin' | null;
@@ -53,7 +54,10 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       _hasHydrated: false,
       setAuth: (token, user) => set({ token, user }),
-      logout: () => set({ token: null, user: null }),
+      logout: () => {
+        stopAllHardwareMedia();
+        set({ token: null, user: null });
+      },
       setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
     {

@@ -23,7 +23,9 @@ import {
   Code2,
   Eye,
   CheckCircle2,
-  Briefcase
+  Briefcase,
+  Save,
+  Trash2
 } from "lucide-react";
 import { AutoSkeleton } from "../../../../../components/ui";
 import Link from "next/link";
@@ -69,6 +71,46 @@ export default function ManagerCourseModulePage() {
   const [dueDate, setDueDate] = useState("");
   const [note, setNote] = useState("");
   const [assignLoading, setAssignLoading] = useState(false);
+
+  // Quick Edit Module State
+  const [isEditingModule, setIsEditingModule] = useState(false);
+  const [editedContent, setEditedContent] = useState("");
+  const [savingModule, setSavingModule] = useState(false);
+
+  // Delete Course State
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingCourse, setDeletingCourse] = useState(false);
+
+  const handleDeleteCourse = async () => {
+    setDeletingCourse(true);
+    try {
+      await apiClient.delete(`/courses/${courseId}`);
+      toast.success("Modul berhasil dihapus.");
+      router.push("/manager/courses");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Gagal menghapus modul"));
+      setDeletingCourse(false);
+    }
+  };
+
+  const handleStartEdit = () => {
+    setEditedContent(courseModule);
+    setIsEditingModule(true);
+  };
+
+  const handleSaveModule = async () => {
+    setSavingModule(true);
+    try {
+      await apiClient.patch(`/courses/${courseId}`, { courseModule: editedContent });
+      toast.success("Materi modul berhasil disimpan!");
+      setCourse((prev: any) => ({ ...prev, courseModule: editedContent }));
+      setIsEditingModule(false);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Gagal menyimpan modul"));
+    } finally {
+      setSavingModule(false);
+    }
+  };
 
   useEffect(() => {
     if (!courseId) return;
@@ -154,7 +196,7 @@ export default function ManagerCourseModulePage() {
   const categories: RubricCategory[] = (rubric?.categories as any) || [];
 
   return (
-    <AutoSkeleton isLoading={loading} type="card">
+    <AutoSkeleton isLoading={loading} type="course-module">
       <div className="p-6 max-w-6xl mx-auto space-y-6">
         {/* Navigation & Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--color-border)] pb-5">
@@ -172,6 +214,13 @@ export default function ManagerCourseModulePage() {
                   {course?.difficulty || "Intermediate"}
                 </span>
                 <span className="badge badge-gray">{course?.category || "Sales"}</span>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                  course?.personaGender === "F"
+                    ? "bg-rose-500/10 text-rose-500 border border-rose-500/20"
+                    : "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                }`}>
+                  {course?.personaGender === "F" ? "👩 Avatar Cewek (f1.vrm)" : "👨 Avatar Cowok (m1.vrm)"}
+                </span>
                 {course?.isActive ? (
                   <span className="badge badge-green">Aktif</span>
                 ) : (
@@ -201,6 +250,13 @@ export default function ManagerCourseModulePage() {
               className="btn btn-primary btn-sm flex items-center gap-1.5 shadow-sm"
             >
               <Users className="w-4 h-4" /> Tugaskan ke Tim
+            </button>
+            <button 
+              onClick={() => setShowDeleteModal(true)}
+              className="btn btn-secondary btn-sm flex items-center gap-1.5 text-rose-500 hover:bg-rose-500/10 border-rose-500/30"
+              title="Hapus modul course ini"
+            >
+              <Trash2 className="w-4 h-4" /> Hapus
             </button>
           </div>
         </div>
@@ -300,6 +356,16 @@ export default function ManagerCourseModulePage() {
 
               {courseModule && (
                 <div className="flex items-center gap-2">
+                  {!isEditingModule && (
+                    <button
+                      onClick={handleStartEdit}
+                      className="btn btn-secondary btn-xs flex items-center gap-1.5 border-indigo-500/30 text-indigo-400"
+                      title="Edit materi modul ini"
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Edit Materi
+                    </button>
+                  )}
+
                   <div className="flex items-center bg-[var(--color-bg)] rounded-lg p-0.5 border border-[var(--color-border)]">
                     <button
                       onClick={() => setViewMode("rendered")}
@@ -337,7 +403,51 @@ export default function ManagerCourseModulePage() {
 
             {/* Content Body */}
             <div className="p-6 md:p-8 min-h-[480px]">
-              {!courseModule ? (
+              {isEditingModule ? (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="flex items-center justify-between pb-2 border-b border-[var(--color-border)]">
+                    <div className="flex items-center gap-2">
+                      <Pencil className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-bold text-[var(--color-text)]">Mode Edit Materi Modul (Markdown)</span>
+                    </div>
+                    <span className="text-[11px] text-[var(--color-text-muted)]">Perubahan akan langsung terindeks ke RAG AI Simulator</span>
+                  </div>
+
+                  <textarea
+                    rows={18}
+                    className="input font-mono text-xs w-full p-4 rounded-xl resize-y leading-relaxed"
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
+                    placeholder="Tuliskan materi persiapan roleplay dan panduan sales dalam format Markdown..."
+                  />
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      disabled={savingModule}
+                      onClick={() => setIsEditingModule(false)}
+                      className="btn btn-secondary btn-sm"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingModule}
+                      onClick={handleSaveModule}
+                      className="btn btn-primary btn-sm flex items-center gap-1.5"
+                    >
+                      {savingModule ? (
+                        <span className="animate-pulse">Menyimpan...</span>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          <span>Simpan Perubahan Modul</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : !courseModule ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                   <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center">
                     <BookOpen className="w-8 h-8 opacity-60" />
@@ -648,6 +758,53 @@ export default function ManagerCourseModulePage() {
                   className="btn btn-primary"
                 >
                   {assignLoading ? "Menugaskan..." : `Tugaskan ke ${selectedUsers.length} sales`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Course Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4">
+              <div className="flex items-center gap-3 text-rose-500">
+                <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-[var(--color-text)]">Hapus Modul Pelatihan?</h3>
+                  <p className="text-xs text-[var(--color-text-muted)]">Modul ini akan diarsipkan dari sistem.</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
+                Anda yakin ingin menghapus modul <strong className="text-[var(--color-text)]">"{course?.title}"</strong>? Seluruh data skenario, konfigurasi avatar, dan materi modul akan diarsipkan.
+              </p>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={deletingCourse}
+                  onClick={() => setShowDeleteModal(false)}
+                  className="btn btn-secondary text-xs px-4"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingCourse}
+                  onClick={handleDeleteCourse}
+                  className="btn text-xs px-4 bg-rose-600 hover:bg-rose-700 text-white border-rose-600 flex items-center gap-1.5"
+                >
+                  {deletingCourse ? (
+                    <span className="animate-pulse">Menghapus...</span>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Ya, Hapus Modul</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

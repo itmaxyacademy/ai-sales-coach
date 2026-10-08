@@ -238,6 +238,7 @@ export const listCourses: RequestHandler = async (req, res, next) => {
         difficulty: true,
         category: true,
         personaName: true,
+        personaGender: true,
         productName: true,
         aiModelSize: true,
         maxTurns: true,

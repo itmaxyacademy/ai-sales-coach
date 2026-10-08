@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore, getDashboardPath } from "../../../store/authStore";
 import type { Role } from "../../../store/authStore";
 import { apiClient } from "../../../lib/api/client";
+import { stopAllHardwareMedia } from "../../../lib/utils/mediaCleanup";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -85,6 +86,7 @@ export default function LoginPage() {
   };
 
   useEffect(() => {
+    stopAllHardwareMedia();
     apiClient.get("/auth/demo-users").then((res) => {
       const users = (res as { data?: DemoAccount[] } | null)?.data;
       if (users?.length) setDemoUsers(users);
@@ -104,6 +106,7 @@ export default function LoginPage() {
   }, []);
 
   const handleShortcutLogin = async (userEmail: string) => {
+    if (loading) return;
     setError("");
     setLoading(true);
     try {
@@ -121,6 +124,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
 
@@ -387,13 +391,14 @@ export default function LoginPage() {
                                 <button
                                   key={u.id}
                                   type="button"
+                                  disabled={loading}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     closeDropdown();
                                     handleShortcutLogin(u.email);
                                   }}
                                   aria-label={`Super Admin: ${u.name}, ${u.email}`}
-                                  className="min-h-14 px-3 py-2 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left"
+                                  className="min-h-14 px-3 py-2 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
                                 >
                                   <Crown className="w-4 h-4 text-yellow-500 shrink-0" />
                                   <div className="flex flex-col min-w-0">
@@ -440,13 +445,14 @@ export default function LoginPage() {
                                     <button
                                       key={u.id}
                                       type="button"
+                                      disabled={loading}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         closeDropdown();
                                         handleShortcutLogin(u.email);
                                       }}
                                       aria-label={`HR atau Admin perusahaan: ${u.name}, ${companyName}, ${u.email}`}
-                                      className="min-h-14 px-3 py-2 pl-4 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left"
+                                      className="min-h-14 px-3 py-2 pl-4 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
                                     >
                                       <Building2 className="w-4 h-4 text-blue-400 shrink-0" />
                                       <div className="flex flex-col min-w-0">
@@ -475,13 +481,14 @@ export default function LoginPage() {
                                             <button
                                               key={u.id}
                                               type="button"
+                                              disabled={loading}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 closeDropdown();
                                                 handleShortcutLogin(u.email);
                                               }}
                                               aria-label={`Manager: ${u.name}, ${companyName}, tim ${tName === "No Team" ? "belum ditentukan" : tName}, ${u.email}`}
-                                              className="min-h-14 px-3 py-2 pl-8 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left"
+                                              className="min-h-14 px-3 py-2 pl-8 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
                                             >
                                               <UserCircle className="w-4 h-4 text-green-400 shrink-0" />
                                               <div className="flex flex-col min-w-0">
@@ -502,13 +509,14 @@ export default function LoginPage() {
                                             <button
                                               key={u.id}
                                               type="button"
+                                              disabled={loading}
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 closeDropdown();
                                                 handleShortcutLogin(u.email);
                                               }}
                                               aria-label={`Sales: ${u.name}, ${companyName}, tim ${tName === "No Team" ? "belum ditentukan" : tName}, ${u.email}`}
-                                              className="min-h-14 px-3 py-2 pl-10 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left"
+                                              className="min-h-14 px-3 py-2 pl-10 text-sm text-gray-200 hover:bg-slate-800 focus-visible:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-sky-300 transition-colors flex items-center gap-3 text-left disabled:opacity-50"
                                             >
                                               <User className="w-4 h-4 text-gray-400 shrink-0" />
                                               <div className="flex flex-col min-w-0">

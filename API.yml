@@ -1966,7 +1966,7 @@
                     notification:
                       $ref: '#/components/schemas/Notification'
 
-    # ─── SESSIONS — RETRY ──────────────────────────────────────────────────────
+    # ─── SESSIONS - RETRY ──────────────────────────────────────────────────────
     /api/sessions/{sessionId}/retry:
       post:
         tags:
@@ -2097,7 +2097,7 @@
                       type: integer
                       example: 7
 
-    # ─── ADMIN — SYSTEM INFO ───────────────────────────────────────────────────
+    # ─── ADMIN - SYSTEM INFO ───────────────────────────────────────────────────
     /api/admin/system/info:
       get:
         tags:
@@ -2171,7 +2171,7 @@
                       format: date-time
                       example: "2026-05-20T02:31:30.000Z"
 
-    # ─── ADMIN — TOKEN USAGE ───────────────────────────────────────────────────
+    # ─── ADMIN - TOKEN USAGE ───────────────────────────────────────────────────
     /api/admin/token-usage:
       get:
         tags:
@@ -2320,7 +2320,7 @@
                             type: number
                             example: 0.0012
 
-    # ─── ADMIN — AI API KEYS ───────────────────────────────────────────────────
+    # ─── ADMIN - AI API KEYS ───────────────────────────────────────────────────
     /api/admin/ai-keys:
       get:
         tags:
@@ -2464,7 +2464,7 @@
                       type: string
                       example: "Key is valid and working."
 
-    # ─── ADMIN — AUDIT LOG ─────────────────────────────────────────────────────
+    # ─── ADMIN - AUDIT LOG ─────────────────────────────────────────────────────
     /api/admin/audit-logs:
       get:
         tags:
@@ -2534,7 +2534,7 @@
                       type: integer
                       example: 2
 
-    # ─── ADMIN — BADGES SEED ───────────────────────────────────────────────────
+    # ─── ADMIN - BADGES SEED ───────────────────────────────────────────────────
     /api/admin/badges/seed:
       post:
         tags:

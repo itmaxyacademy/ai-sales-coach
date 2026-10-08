@@ -200,7 +200,7 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      <AutoSkeleton isLoading={loading} type="card">
+      <AutoSkeleton isLoading={loading} type="analytics">
       {error ? (
         <div className="card p-8 text-center text-[var(--color-danger)]">{error}</div>
       ) : (

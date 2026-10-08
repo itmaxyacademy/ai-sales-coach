@@ -10,6 +10,7 @@ import {
   Shield, HelpCircle, CheckCircle2, Cpu, ArrowRight, Layers, FileCheck2, 
   Edit3, Eye, RefreshCw, BookOpen
 } from "lucide-react";
+import { AvatarSelector } from "../../../../components/AvatarSelector";
 
 // ── Multi-Step Interactive Ask-Back AI Generate Modal ──────────────────────
 type ClarificationItem = {
@@ -1094,18 +1095,13 @@ export default function CreateCoursePage() {
                   <label className="block text-xs font-semibold mb-1">Persona Role</label>
                   <input required type="text" className="input" placeholder="e.g. Chief Marketing Officer" value={formData.personaRole} onChange={e => setFormData({...formData, personaRole: e.target.value})} />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1">
-                    Persona Gender
-                    <span className="ml-1 text-[var(--color-text-muted)] font-normal">(menentukan suara TTS)</span>
-                  </label>
-                  <select className="input" value={formData.personaGender} onChange={e => setFormData({...formData, personaGender: e.target.value})}>
-                    <option value="M">👨 Male (Pria)</option>
-                    <option value="F">👩 Female (Wanita)</option>
-                  </select>
-                  <p className="text-[10px] text-[var(--color-text-muted)] mt-1">AI akan menggunakan {voiceLabel} saat berbicara.</p>
+                <div className="col-span-2">
+                  <AvatarSelector
+                    value={formData.personaGender}
+                    onChange={(gender) => setFormData({ ...formData, personaGender: gender })}
+                  />
                 </div>
-                <div>
+                <div className="col-span-2">
                   <label className="block text-xs font-semibold mb-1">Personality Description</label>
                   <input required type="text" className="input" placeholder="e.g. Skeptical, analytical, direct" value={formData.personaPersonality} onChange={e => setFormData({...formData, personaPersonality: e.target.value})} />
                 </div>

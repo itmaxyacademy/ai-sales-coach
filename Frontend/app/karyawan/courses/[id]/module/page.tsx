@@ -41,7 +41,7 @@ export default function CourseModulePage() {
   );
 
   return (
-    <AutoSkeleton isLoading={loading} type="card">
+    <AutoSkeleton isLoading={loading} type="course-module">
       <div className="p-6 max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4 border-b border-[var(--color-border)] pb-4">

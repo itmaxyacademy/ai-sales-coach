@@ -18,6 +18,13 @@ import { ConfirmModal } from "../../../../components/ui";
 import dynamic from "next/dynamic";
 import { useTTS } from "../../../../lib/hooks/useTTS";
 import { toast } from "sonner";
+import {
+  registerActiveStream,
+  unregisterActiveStream,
+  registerActiveRecognition,
+  unregisterActiveRecognition,
+  stopAllHardwareMedia,
+} from "@/lib/utils/mediaCleanup";
 
 const AIAvatar3D = dynamic(
   () => import("../../../../components/Aiavatar3d").then(m => m.AIAvatar3D),
@@ -106,7 +113,17 @@ export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
   const sessionId = params?.sessionId as string;
-  const { speak, stop: stopTTS, bargeIn, isSpeaking: ttsSpeaking, isEnabled: ttsEnabled, toggleEnabled: toggleTTS, preload } = useTTS();
+  const {
+    speak,
+    stop: stopTTS,
+    bargeIn,
+    isSpeaking: ttsSpeaking,
+    isEnabled: ttsEnabled,
+    toggleEnabled: toggleTTS,
+    preload,
+    engine: ttsEngine,
+    voiceWarning,
+  } = useTTS();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -129,6 +146,7 @@ export default function SessionPage() {
   const [personaBriefing, setPersonaBriefing] = useState<any>(null);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [cancelingBriefing, setCancelingBriefing] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
 
   // Full-Duplex & Voice Enhancements
   const [handsFreeMode, setHandsFreeMode] = useState(false);
@@ -159,6 +177,7 @@ export default function SessionPage() {
 
   const isListeningRef = useRef(false);
   const chatRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -188,9 +207,91 @@ export default function SessionPage() {
   const pageLifecycleRef = useRef(0);
   const briefingDialogRef = useRef<HTMLDivElement>(null);
 
+  const teardownAllHardware = useCallback(() => {
+    // 1. Permanently stop Speech Recognition and unhook event listeners
+    isListeningRef.current = false;
+    pausedForTtsRef.current = true;
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      const rec = recognitionRef.current;
+      rec.onend = null;
+      rec.onerror = null;
+      rec.onresult = null;
+      rec.onstart = null;
+      try { rec.abort(); } catch {}
+      try { rec.stop(); } catch {}
+      unregisterActiveRecognition(rec);
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+    setUserSpeakingAnim(false);
+
+    // 2. Teardown mic visualizer and microphone audio tracks
+    if (micAnimFrameRef.current) {
+      cancelAnimationFrame(micAnimFrameRef.current);
+      micAnimFrameRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch {}
+      audioCtxRef.current = null;
+    }
+    analyserRef.current = null;
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch {}
+      });
+      unregisterActiveStream(micStreamRef.current);
+      micStreamRef.current = null;
+    }
+
+    // 3. Teardown camera video tracks and video element
+    if (mpAnimFrameRef.current) {
+      cancelAnimationFrame(mpAnimFrameRef.current);
+      mpAnimFrameRef.current = null;
+    }
+    if (videoRef.current) {
+      if (videoRef.current.srcObject instanceof MediaStream) {
+        videoRef.current.srcObject.getTracks().forEach((track) => {
+          try {
+            track.stop();
+            track.enabled = false;
+          } catch {}
+        });
+      }
+      videoRef.current.srcObject = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+          track.enabled = false;
+        } catch {}
+      });
+      unregisterActiveStream(streamRef.current);
+      streamRef.current = null;
+    }
+    setCameraOn(false);
+
+    // 4. Force global release of all active tracks across the browser
+    stopAllHardwareMedia();
+
+    // 5. Stop TTS playback
+    stopTTS();
+  }, [stopTTS]);
+
   const avatarState: "idle" | "thinking" | "speaking" | "listening" =
-    loading ? "thinking"
-    : ttsSpeaking ? "speaking"
+    ttsSpeaking ? "speaking"
+    : loading ? "thinking"
     : isListening ? "listening"
     : "idle";
 
@@ -205,16 +306,15 @@ useEffect(() => {
   // Auto-complete countdown jika shouldEnd tercapai
   useEffect(() => {
     if (!shouldEnd || ending) return;
+    let count = 5;
     setAutoEndCountdown(5);
     const interval = setInterval(() => {
-      setAutoEndCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval);
-          endSession();
-          return 0;
-        }
-        return prev - 1;
-      });
+      count -= 1;
+      setAutoEndCountdown(count);
+      if (count <= 0) {
+        clearInterval(interval);
+        void endSession();
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, [shouldEnd, ending]);
@@ -290,6 +390,7 @@ useEffect(() => {
   const cancelBriefing = useCallback(async () => {
     if (cancelingBriefing) return;
     setCancelingBriefing(true);
+    teardownAllHardware();
     try {
       await apiClient.patch(`/sessions/${sessionId}/abandon`, {});
       abandonSentRef.current = true;
@@ -298,9 +399,11 @@ useEffect(() => {
       toast.error(getErrorMessage(err, 'Sesi tidak dapat dibatalkan.'), SESSION_TOAST_OPTIONS);
       setCancelingBriefing(false);
     }
-  }, [cancelingBriefing, router, sessionId]);
+  }, [cancelingBriefing, router, sessionId, teardownAllHardware]);
 
   const beginSession = () => {
+    if (startingSession || sessionStartedRef.current) return;
+    setStartingSession(true);
     void apiClient.patch(`/sessions/${sessionId}/begin`, {})
       .then(() => {
         sessionStartedRef.current = true;
@@ -308,7 +411,10 @@ useEffect(() => {
         setSessionStarted(true);
         setShowBriefing(false);
       })
-      .catch((err: unknown) => toast.error(getErrorMessage(err, 'Sesi gagal dimulai. Coba lagi.'), SESSION_TOAST_OPTIONS));
+      .catch((err: unknown) => {
+        setStartingSession(false);
+        toast.error(getErrorMessage(err, 'Sesi gagal dimulai. Coba lagi.'), SESSION_TOAST_OPTIONS);
+      });
   };
 
   useEffect(() => {
@@ -336,10 +442,12 @@ useEffect(() => {
         if (res?.session) {
           const s = res.session;
           if (s.status === "completed") {
+            teardownAllHardware();
             router.replace(`/karyawan/session/${sessionId}/result`);
             return;
           }
           if (s.status === "abandoned") {
+            teardownAllHardware();
             router.replace('/karyawan/dashboard');
             return;
           }
@@ -359,17 +467,28 @@ useEffect(() => {
           setCustomerState({ trustLevel: s.trustLevel, stage: s.customerStage, mood: s.mood });
           setMaxTurns(s.course?.maxTurns || 20);
           setCourseName(s.course?.title || "Roleplay Session");
-          if (s.ttsVoice) setTtsVoice(s.ttsVoice);
-          const pName = (s.course?.personaName || "").toLowerCase();
-          const femaleKeywords = ['siti', 'dewi', 'rina', 'ratna', 'siska', 'maya', 'lina', 'sari', 'ayu', 'tika', 'clara', 'nadia', 'putri', 'ibu', 'mbak', 'nita', 'diana', 'kartika', 'amelia', 'sinta', 'rahmawati'];
-          const maleKeywords = ['budi', 'andi', 'tono', 'rudi', 'raka', 'hendra', 'fajar', 'dedi', 'joko', 'ivan', 'dimas', 'faisal', 'surya', 'daniel', 'pak', 'mas', 'bapak'];
-          let inferredGender = s.course?.personaGender || 'M';
-          if (femaleKeywords.some(k => pName.includes(k))) {
-            inferredGender = 'F';
-          } else if (maleKeywords.some(k => pName.includes(k))) {
-            inferredGender = 'M';
+          let effectiveGender = s.course?.personaGender;
+          if (!effectiveGender || (effectiveGender !== 'M' && effectiveGender !== 'F')) {
+            const pName = (s.course?.personaName || "").toLowerCase();
+            const femaleKeywords = ['siti', 'dewi', 'rina', 'ratna', 'siska', 'maya', 'lina', 'sari', 'ayu', 'tika', 'clara', 'nadia', 'putri', 'ibu', 'mbak', 'nita', 'diana', 'kartika', 'amelia', 'sinta', 'rahmawati', 'sarah', 'wanita', 'gadis'];
+            const maleKeywords = ['budi', 'andi', 'tono', 'rudi', 'raka', 'hendra', 'fajar', 'dedi', 'joko', 'ivan', 'dimas', 'faisal', 'surya', 'daniel', 'pak', 'mas', 'bapak', 'dono', 'pria'];
+            if (femaleKeywords.some(k => pName.includes(k))) {
+              effectiveGender = 'F';
+            } else if (maleKeywords.some(k => pName.includes(k))) {
+              effectiveGender = 'M';
+            } else {
+              effectiveGender = 'M';
+            }
           }
-          setPersonaGender(inferredGender);
+          setPersonaGender(effectiveGender);
+
+          let effectiveVoice = s.ttsVoice || (effectiveGender === 'F' ? 'F1' : 'M1');
+          if (effectiveGender === 'M' && effectiveVoice.startsWith('F')) {
+            effectiveVoice = 'M1';
+          } else if (effectiveGender === 'F' && effectiveVoice.startsWith('M')) {
+            effectiveVoice = 'F1';
+          }
+          setTtsVoice(effectiveVoice);
         }
         if (res?.transcript) {
           setMessages(res.transcript.map((m: any) => ({
@@ -435,9 +554,11 @@ useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!sessionStartedRef.current) {
         sendAbandonKeepalive();
+        teardownAllHardware();
         return;
       }
       if (shouldEndRef.current && !endingRef.current) {
+        teardownAllHardware();
         // User menutup tab/window saat sesi sudah shouldEnd - kirim keepalive POST agar completed di DB
         try {
           const token = typeof window !== 'undefined' ? localStorage.getItem('auth-storage') : null;
@@ -467,17 +588,17 @@ useEffect(() => {
       return e.returnValue;
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", teardownAllHardware);
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", teardownAllHardware);
       queueMicrotask(() => {
         if (pageLifecycleRef.current === lifecycle) sendAbandonKeepalive();
       });
-      // ponytail: teardown hardware media streams and listeners on exit
-      stopMicVisualizer();
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      try { recognitionRef.current?.abort(); } catch {}
+      // teardown hardware media streams and listeners on exit
+      teardownAllHardware();
     };
-  }, [sendAbandonKeepalive]);
+  }, [sendAbandonKeepalive, teardownAllHardware]);
 
   // ponytail: native Call Center Pro shortcuts (M: toggle mic, Esc: toggle end call)
   useEffect(() => {
@@ -718,6 +839,16 @@ useEffect(() => {
     localStorage.setItem(`draft_${sessionId}`, val);
   };
 
+  // Auto-resize chat textarea to fit content smoothly without clipping or weird scrollbars
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      const scrollH = textareaRef.current.scrollHeight;
+      const clampedHeight = Math.min(Math.max(scrollH, 42), 160);
+      textareaRef.current.style.height = `${clampedHeight}px`;
+    }
+  }, [input]);
+
   useEffect(() => {
     if (videoRef.current) {
       if (cameraOn && streamRef.current) {
@@ -731,14 +862,24 @@ useEffect(() => {
 
   const toggleCamera = async () => {
     if (cameraOn) {
-      streamRef.current?.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => {
+          try {
+            t.stop();
+            t.enabled = false;
+          } catch {}
+        });
+        unregisterActiveStream(streamRef.current);
+        streamRef.current = null;
+      }
       setCameraOn(false);
       setEdgeEyeContact(null);
     } else {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         streamRef.current = stream;
+        registerActiveStream(stream);
         setCameraOn(true);
         toast.success("Kamera aktif dengan Real-time Edge Facial HUD", SESSION_TOAST_OPTIONS);
       } catch (err) {
@@ -764,6 +905,7 @@ useEffect(() => {
 
   const startMicVisualizer = (stream: MediaStream) => {
     micStreamRef.current = stream;
+    registerActiveStream(stream);
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioCtx();
@@ -808,9 +950,15 @@ useEffect(() => {
     analyserRef.current = null;
     setUserSpeakingAnim(false);
 
-    // ponytail: release physical hardware mic track so browser mic icon stops
+    // release physical hardware mic track so browser mic icon stops
     if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach(t => t.stop());
+      micStreamRef.current.getTracks().forEach(t => {
+        try {
+          t.stop();
+          t.enabled = false;
+        } catch {}
+      });
+      unregisterActiveStream(micStreamRef.current);
       micStreamRef.current = null;
     }
   };
@@ -869,13 +1017,25 @@ useEffect(() => {
     };
 
     recognitionRef.current = recognition;
+    registerActiveRecognition(recognition);
     try { recognition.start(); } catch {}
   };
 
   const toggleMic = async () => {
     if (isListeningRef.current) {
       isListeningRef.current = false;
-      recognitionRef.current?.stop();
+      pausedForTtsRef.current = true;
+      if (recognitionRef.current) {
+        const rec = recognitionRef.current;
+        rec.onend = null;
+        rec.onerror = null;
+        rec.onresult = null;
+        rec.onstart = null;
+        try { rec.abort(); } catch {}
+        try { rec.stop(); } catch {}
+        unregisterActiveRecognition(rec);
+        recognitionRef.current = null;
+      }
       setIsListening(false);
       setUserSpeakingAnim(false);
       stopMicVisualizer();
@@ -1126,8 +1286,10 @@ useEffect(() => {
   };
 
   const endSession = async () => {
+    if (ending || endingRef.current) return;
+    endingRef.current = true;
     setEnding(true);
-    stopTTS();
+    teardownAllHardware();
     localStorage.removeItem(`draft_${sessionId}`);
     stopMicVisualizer();
     try {
@@ -1139,6 +1301,7 @@ useEffect(() => {
       router.push(`/karyawan/session/${sessionId}/result`);
     } catch (err) {
       setError(getErrorMessage(err, "Terjadi kesalahan."));
+      endingRef.current = false;
       setEnding(false);
     } finally {
       setShowEndConfirm(false);
@@ -1186,11 +1349,11 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
               {personaBriefing.personaBuyingSignals && <p className="rounded-xl bg-[var(--color-bg)] p-3"><strong>Tanda siap membeli:</strong> {personaBriefing.personaBuyingSignals}</p>}
             </div>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button onClick={() => void cancelBriefing()} disabled={cancelingBriefing} className="btn btn-secondary">
+              <button onClick={() => void cancelBriefing()} disabled={cancelingBriefing || startingSession} className="btn btn-secondary">
                 {cancelingBriefing ? 'Membatalkan…' : 'Batalkan sesi'}
               </button>
-              <button data-autofocus="true" onClick={beginSession} className="btn btn-primary">
-                Mulai latihan <ArrowRight className="ml-2 h-4 w-4" />
+              <button data-autofocus="true" onClick={beginSession} disabled={startingSession || cancelingBriefing} className="btn btn-primary">
+                {startingSession ? 'Memulai…' : <>Mulai latihan <ArrowRight className="ml-2 h-4 w-4" /></>}
               </button>
             </div>
           </div>
@@ -1253,7 +1416,7 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
               customerState.stage === "decided" ? "bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30"
               : customerState.stage === "negotiating" ? "bg-blue-500/10 text-blue-500 border-blue-500/30"
               : customerState.stage === "interested" ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/30"
-              : customerState.stage === "warming" ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
+              : customerState.stage === "warming" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
               : "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]"
             }`}>{customerState.stage}</span>
           )}
@@ -1450,6 +1613,39 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                     </>
                   )}
                 </div>
+
+                {/* Voice Engine & Warning Badge */}
+                <div className="mt-2.5 flex flex-col items-center gap-1.5">
+                  <div className="px-3 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center gap-2 text-[11px]">
+                    <span className="text-white/80 font-medium">
+                      Voice: {language === "en"
+                        ? (personaGender === "F" ? "Jenny" : "Guy")
+                        : (personaGender === "F" ? "Gadis" : "Ardi")}
+                    </span>
+                    <span className="w-1 h-1 rounded-full bg-white/30" />
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold uppercase tracking-wider ${
+                      ttsEngine === "edge-cache"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                        : ttsEngine === "piper"
+                        ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                        : ttsEngine === "webspeech"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                    }`}>
+                      {ttsEngine === "edge-cache" ? "⚡ Edge Cache" :
+                       ttsEngine === "piper" ? "📦 Piper" :
+                       ttsEngine === "webspeech" ? "🌐 WebSpeech" :
+                       "☁️ Edge Neural"}
+                    </span>
+                  </div>
+
+                  {voiceWarning && (
+                    <div className="px-3 py-1 rounded-full bg-amber-950/90 border border-amber-500/50 text-amber-200 text-[10px] flex items-center gap-1.5 animate-pulse shadow-lg">
+                      <span>⚠️</span>
+                      <span>{voiceWarning}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Phone Action Bar */}
@@ -1548,8 +1744,35 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                     {ttsSpeaking && <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse inline-block" />}
                     <span className="text-white text-[11px] font-medium">AI Customer</span>
                   </div>
-                  <div className="bg-black/60 backdrop-blur-sm px-2 py-1 rounded-lg">
-                    <span className="text-[10px] text-white/70">Voice: {ttsVoice}</span>
+                  <div className="flex flex-col gap-1.5 z-20">
+                    <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 flex items-center gap-2 shadow-sm">
+                      <span className="text-[10px] text-white/90 font-medium">
+                        Voice: {language === "en"
+                          ? (personaGender === "F" ? "Cewek Inggris (Jenny)" : "Cowok Inggris (Guy)")
+                          : (personaGender === "F" ? "Cewek Indo (Gadis)" : "Cowok Indo (Ardi)")}
+                      </span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold uppercase tracking-wider ${
+                        ttsEngine === "edge-cache"
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                          : ttsEngine === "piper"
+                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                          : ttsEngine === "webspeech"
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                          : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                      }`}>
+                        {ttsEngine === "edge-cache" ? "⚡ Edge Cache" :
+                         ttsEngine === "piper" ? "📦 Piper" :
+                         ttsEngine === "webspeech" ? "🌐 WebSpeech" :
+                         "☁️ Edge Neural"}
+                      </span>
+                    </div>
+
+                    {voiceWarning && (
+                      <div className="bg-amber-950/85 backdrop-blur-md border border-amber-500/50 text-amber-200 text-[10px] px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg animate-pulse">
+                        <span className="text-amber-400">⚠️</span>
+                        <span className="font-medium">{voiceWarning}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1669,7 +1892,7 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
         {/* ── Right Sidebar: Conversation Chat ── */}
         <div className={`flex flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)] transition-all duration-300 overflow-hidden z-20 ${
           sidebarOpen
-            ? "absolute inset-0 xl:relative xl:inset-auto xl:w-[360px] 2xl:w-[400px] opacity-100 flex-shrink-0"
+            ? "absolute inset-0 lg:relative lg:inset-auto lg:w-[400px] xl:w-[460px] 2xl:w-[520px] opacity-100 flex-shrink-0"
             : "w-0 opacity-0 pointer-events-none"
         }`}>
 
@@ -1694,7 +1917,7 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                 customerState.stage === "decided" ? "bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/30" :
                 customerState.stage === "negotiating" ? "bg-blue-500/10 text-blue-500 border-blue-500/30" :
                 customerState.stage === "interested" ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)] border-[var(--color-accent)]/30" :
-                customerState.stage === "warming" ? "bg-amber-500/10 text-amber-500 border-amber-500/30" :
+                customerState.stage === "warming" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30" :
                 "bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]"
               }`}>
                 {customerState.stage || "Cold"}
@@ -1788,32 +2011,35 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
 
               {/* 1.2 Proactive Silence Detection Whisper Card */}
               {proactiveHint && !input.trim() && !isListening && (
-                <div className="mb-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 shadow-sm animate-in fade-in duration-200">
-                  <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="mb-2 p-3 rounded-xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-500/30 dark:border-amber-500/40 flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
+                  <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
                         Bisikan Pelatih Otomatis (Hening {salesSilenceSeconds}d)
                       </span>
                       <button
                         type="button"
                         onClick={() => setProactiveHint(null)}
-                        className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                        className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-semibold transition-colors cursor-pointer"
                       >
                         Tutup
                       </button>
                     </div>
-                    <p className="text-[11px] text-[var(--color-text)] mt-0.5 leading-relaxed font-medium">
+                    <p className="text-[11px] text-[var(--color-text)] mt-1 leading-relaxed font-medium">
                       {proactiveHint}
                     </p>
-                    <div className="mt-1.5 flex gap-2">
+                    <div className="mt-2 flex gap-2">
                       <button
                         type="button"
                         onClick={() => {
-                          setInput(proactiveHint);
+                          handleInputChange(proactiveHint);
                           setProactiveHint(null);
+                          setTimeout(() => {
+                            textareaRef.current?.focus();
+                          }, 50);
                         }}
-                        className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded font-semibold transition-colors"
+                        className="inline-flex items-center gap-1.5 text-xs bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-semibold px-3 py-1.5 rounded-lg shadow-xs transition-all active:scale-[0.98] cursor-pointer"
                       >
                         Gunakan Saran Respon Ini
                       </button>
@@ -1822,12 +2048,13 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                 </div>
               )}
 
-              <div className={`flex items-end gap-1.5 bg-[var(--color-surface)] border rounded-2xl px-1 py-1 transition-all duration-200 ${
+              <div className={`flex items-end gap-1.5 sm:gap-2 bg-[var(--color-surface)] border rounded-2xl p-1.5 transition-all duration-200 ${
                 isListening
                   ? "border-[var(--color-success)]/50 shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-success)_8%,transparent)]"
                   : "border-[var(--color-border)] focus-within:border-[var(--color-border-strong)]"
               }`}>
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -1837,10 +2064,11 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                     }
                   }}
                   placeholder={isListening ? "Listening to voice input…" : "Type or speak to the prospect…"}
-                  className="flex-1 min-w-0 bg-transparent text-[12px] text-[var(--color-text)] placeholder-[var(--color-text-subtle)] resize-none outline-none max-h-20 min-h-[36px] py-2 px-2 custom-scrollbar leading-relaxed"
+                  className="flex-1 min-w-0 bg-transparent text-[13px] text-[var(--color-text)] placeholder-[var(--color-text-subtle)] resize-none outline-none min-h-[42px] max-h-[160px] py-2 px-2.5 custom-scrollbar leading-relaxed"
                   rows={1}
                 />
                 <button
+                  type="button"
                   title={
                     cooldownRemaining > 0
                       ? `Cooldown: ${cooldownRemaining}s`
@@ -1850,27 +2078,28 @@ const trustPct = Math.round(((customerState.trustLevel ?? 2.5) / 5) * 100);
                   }
                   onClick={requestHint}
                   disabled={hintLoading || cooldownRemaining > 0 || loading || shouldEnd}
-                  className={`min-w-10 min-h-10 flex items-center justify-center gap-1.5 mb-0.5 px-2 sm:px-3 rounded-xl transition-all font-semibold text-xs flex-shrink-0 ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center gap-1.5 mb-0.5 rounded-xl transition-all font-semibold text-xs flex-shrink-0 ${
                     cooldownRemaining > 0 
                       ? "bg-[var(--color-bg)] text-[var(--color-text-muted)] cursor-not-allowed border border-[var(--color-border)]"
                       : "bg-[var(--color-warning)]/10 text-[var(--color-warning)] hover:bg-[var(--color-warning)]/20 border border-[var(--color-warning)]/30"
-                  } disabled:opacity-50`}
+                  } disabled:opacity-50 cursor-pointer`}
                 >
                   {hintLoading ? (
                     <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   ) : cooldownRemaining > 0 ? (
-                    <span>00:{cooldownRemaining.toString().padStart(2, '0')}</span>
+                    <span className="text-[10px]">00:{cooldownRemaining.toString().padStart(2, '0')}</span>
                   ) : (
                     <Lightbulb className="w-4 h-4" />
                   )}
                 </button>
                 <button
+                  type="button"
                   id="send-msg-btn"
                   onClick={sendMessage}
                   disabled={!input.trim() || loading || shouldEnd}
-                  className={`min-w-10 min-h-10 mb-0.5 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
+                  className={`w-9 h-9 sm:w-10 sm:h-10 mb-0.5 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
                     input.trim() && !loading && !shouldEnd
-                      ? "bg-[var(--color-accent)] text-white shadow-sm hover:brightness-110 active:scale-95"
+                      ? "bg-[var(--color-accent)] text-white shadow-sm hover:brightness-110 active:scale-95 cursor-pointer"
                       : "bg-[var(--color-border)] text-[var(--color-text-subtle)] cursor-not-allowed"
                   }`}
                 >

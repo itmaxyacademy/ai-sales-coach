@@ -4,13 +4,14 @@ import { toast } from "sonner";
 
 import { useEffect, useState } from "react";
 import { apiClient } from "../../../lib/api/client";
-import { BookOpen, Plus, Pencil, Users, AlertCircle, TrendingUp, X, Eye, UserX } from "lucide-react";
+import { BookOpen, Plus, Pencil, Users, AlertCircle, TrendingUp, X, Eye, UserX, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { SearchInput, PageHeader, EmptyState, AutoSkeleton } from "../../../components/ui";
 
 interface Course {
   id: string; title: string; description: string; difficulty: string; category: string;
   isActive: boolean;
+  personaGender?: string;
   _count?: { sessions: number; assignments: number };
 }
 
@@ -41,6 +42,25 @@ export default function ManagerCoursesPage() {
   const [memberPage, setMemberPage] = useState(1);
   const [memberTotalPages, setMemberTotalPages] = useState(1);
   const [memberLoading, setMemberLoading] = useState(false);
+
+  // Delete Course State
+  const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDeleteCourse = async () => {
+    if (!deletingCourse) return;
+    setDeleteLoading(true);
+    try {
+      await apiClient.delete(`/courses/${deletingCourse.id}`);
+      toast.success(`Modul "${deletingCourse.title}" berhasil dihapus.`);
+      setDeletingCourse(null);
+      fetchCourses();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Gagal menghapus modul"));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchCourses();
@@ -114,7 +134,7 @@ export default function ManagerCoursesPage() {
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!showAssignModal || selectedUsers.length === 0) return;
+    if (!showAssignModal || selectedUsers.length === 0 || assignLoading) return;
     setAssignLoading(true);
     try {
       await apiClient.post("/assignments/bulk", {
@@ -157,7 +177,7 @@ export default function ManagerCoursesPage() {
         className="max-w-xs"
       />
 
-      <AutoSkeleton isLoading={loading} type="card">
+      <AutoSkeleton isLoading={loading} type="course-card">
       {error ? (
         <div className="card p-4 border-[var(--color-warning)] bg-[var(--color-warning-light)] text-[var(--color-warning)] flex items-center gap-2">
           <AlertCircle className="w-4 h-4" /> Gagal memuat course: {error}
@@ -172,10 +192,19 @@ export default function ManagerCoursesPage() {
           {filtered.map(course => (
             <div key={course.id} className={`card card-hover flex flex-col ${!course.isActive ? "opacity-60 grayscale" : ""}`}>
               <div className="p-5 flex-1">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className={`badge ${difficultyColor[course.difficulty] || "badge-gray"}`}>{course.difficulty}</span>
-                  <span className="badge badge-gray">{course.category}</span>
-                  {!course.isActive && <span className="badge badge-red ml-auto">Draft</span>}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`badge ${difficultyColor[course.difficulty] || "badge-gray"}`}>{course.difficulty}</span>
+                    <span className="badge badge-gray">{course.category}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                      course.personaGender === "F"
+                        ? "bg-rose-500/10 text-rose-500 border border-rose-500/20"
+                        : "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                    }`}>
+                      {course.personaGender === "F" ? "👩 Cewek (f1)" : "👨 Cowok (m1)"}
+                    </span>
+                  </div>
+                  {!course.isActive && <span className="badge badge-red">Draft</span>}
                 </div>
                 <Link href={`/manager/courses/${course.id}`} className="hover:text-[var(--color-primary)] transition-colors block">
                   <h3 className="font-semibold text-[var(--color-text)] mb-1 leading-tight hover:text-[var(--color-primary)]">{course.title}</h3>
@@ -194,7 +223,7 @@ export default function ManagerCoursesPage() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-4 border-t border-[var(--color-border)] divide-x divide-[var(--color-border)] bg-[var(--color-surface)] rounded-b-xl overflow-hidden text-center">
+              <div className="grid grid-cols-5 border-t border-[var(--color-border)] divide-x divide-[var(--color-border)] bg-[var(--color-surface)] rounded-b-xl overflow-hidden text-center">
                 <Link 
                   href={`/manager/courses/${course.id}`} 
                   className="py-2.5 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] flex items-center justify-center gap-1 transition-colors"
@@ -222,6 +251,13 @@ export default function ManagerCoursesPage() {
                   title="Tugaskan course ke tim sales"
                 >
                   <Users className="w-3.5 h-3.5" /> Assign
+                </button>
+                <button
+                  onClick={() => setDeletingCourse(course)}
+                  className="py-2.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 flex items-center justify-center gap-1 transition-colors"
+                  title="Hapus modul pelatihan ini"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Hapus
                 </button>
               </div>
             </div>
@@ -320,6 +356,53 @@ export default function ManagerCoursesPage() {
               <button type="button" onClick={() => setShowAssignModal(null)} className="btn btn-secondary">Tutup</button>
               <button type="submit" disabled={assignLoading || selectedUsers.length === 0} onClick={handleAssignSubmit} className="btn btn-primary">
                 {assignLoading ? "Tugaskan..." : `Tugaskan ke ${selectedUsers.length} sales`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingCourse && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3 text-rose-500">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-[var(--color-text)]">Hapus Modul Pelatihan?</h3>
+                <p className="text-xs text-[var(--color-text-muted)]">Tindakan ini akan mengarsipkan modul ini.</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
+              Anda yakin ingin menghapus modul <strong className="text-[var(--color-text)]">"{deletingCourse.title}"</strong>? Modul tidak akan lagi muncul dalam daftar aktif maupun penugasan karyawan.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => setDeletingCourse(null)}
+                className="btn btn-secondary text-xs px-4"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={handleDeleteCourse}
+                className="btn text-xs px-4 bg-rose-600 hover:bg-rose-700 text-white border-rose-600 flex items-center gap-1.5"
+              >
+                {deleteLoading ? (
+                  <span className="animate-pulse">Menghapus...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ya, Hapus Modul</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

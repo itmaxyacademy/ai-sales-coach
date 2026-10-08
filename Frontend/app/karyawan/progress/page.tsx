@@ -30,18 +30,22 @@ export default function ProgressPage() {
   const [period, setPeriod] = useState<string>("30days");
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     Promise.allSettled([
       apiClient.get(`/me/progress?period=${period}`),
       apiClient.get("/me/strengths"),
     ]).then(([progRes, strengthRes]) => {
+      if (cancelled) return;
       if (progRes.status === "fulfilled" && progRes.value?.data) setProgress(progRes.value.data);
       if (strengthRes.status === "fulfilled" && strengthRes.value?.data) setStrengths(strengthRes.value.data);
       setLoading(false);
     }).catch(err => {
+      if (cancelled) return;
       setError(getErrorMessage(err, "Terjadi kesalahan."));
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [period]);
 
   const difficultyColor: Record<string, string> = {
@@ -102,7 +106,7 @@ export default function ProgressPage() {
       )}
 
       {/* Recharts Charts Grid */}
-      <AutoSkeleton isLoading={loading} type="card">
+      <AutoSkeleton isLoading={loading} type="chart-grid">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Rolling Avg Card */}
         <div className="card p-5 space-y-4">
@@ -228,7 +232,7 @@ export default function ProgressPage() {
                 <YAxis domain={[0, 100]} tick={{ fill: "var(--color-text-muted)", fontSize: 10 }} />
                 <Tooltip contentStyle={{ backgroundColor: "var(--color-card)", borderColor: "var(--color-border)", borderRadius: "12px", color: "var(--color-text)", fontSize: "12px" }} />
                 <Legend />
-                {progress?.categoryTrends.map((trend, index) => (
+                {progress?.categoryTrends?.map((trend, index) => (
                   <Line key={trend.category} type="monotone" dataKey={`skill${index}`} name={trend.category.replace(/_/g, " ")} stroke={categoryColors[index % categoryColors.length]} connectNulls dot={{ r: 2 }} />
                 ))}
               </LineChart>

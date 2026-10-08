@@ -65,7 +65,7 @@ export default function KaryawanCoursesPage() {
         </div>
       </div>
 
-      <AutoSkeleton isLoading={loading} type="card">
+      <AutoSkeleton isLoading={loading} type="course-card">
         {filtered.length === 0 ? (
           <EmptyState
             icon={<BookOpen className="w-10 h-10" />}

@@ -79,7 +79,7 @@ const ANIMATION_URLS: Record<string, Record<AvatarState, string>> = {
     idle: "/animations/male/idle.fbx",
     listening: "/animations/male/listening.fbx",
     speaking: "/animations/male/speaking.fbx",
-    thinking: "/animations/male/thinking.fbx",
+    thinking: "/animations/female/thinking.fbx",
   },
   F: {
     idle: "/animations/female/idle.fbx",
@@ -150,7 +150,13 @@ const normalizeMixamoRigName = (name: string) => {
 };
 
 const setExpression = (vrm: VRM, name: string, value: number) => {
-  vrm.expressionManager?.setValue(name, THREE.MathUtils.clamp(value, 0, 1));
+  const manager = vrm.expressionManager;
+  if (!manager) return;
+  const clamped = THREE.MathUtils.clamp(value, 0, 1);
+  manager.setValue(name, clamped);
+  if (name === "surprised" && (manager as any).expressionMap?.Surprised) {
+    manager.setValue("Surprised", clamped);
+  }
 };
 
 const applyNaturalRestPose = (vrm: VRM) => {
@@ -279,7 +285,7 @@ async function loadMixamoAnimation(url: string, vrm: VRM) {
 
 // ─── Expression keys managed by the lerp system ───────────────────────────────
 const EXPR_KEYS = [
-  "blink", "aa", "ih", "ou", "ee", "oh", "pp", "ff",
+  "blink", "aa", "ih", "ou", "ee", "oh",
   "happy", "relaxed", "angry", "sad", "surprised",
 ] as const;
 type ExprKey = typeof EXPR_KEYS[number];
@@ -334,6 +340,7 @@ function AvatarModel({
   // TimeScale micro-wandering to break periodic metronome loops
   const timeScaleTargetRef = useRef(1.0);
   const timeScaleTimer = useRef(2.5);
+  const armEulerRef = useRef(new THREE.Euler());
 
   // ── Load VRM ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -415,7 +422,7 @@ function AvatarModel({
               action.clampWhenFinished = false;
               actionsRef.current[key] = action;
             } catch (err) {
-              console.warn(`Failed to preload animation ${key}:`, err);
+              console.warn(`[Avatar3D] Failed to preload animation ${key} for gender ${gender}:`, err);
             }
           })
         );
@@ -433,7 +440,7 @@ function AvatarModel({
       actionsRef.current = {};
       currentActionRef.current = null;
     };
-  }, [vrm, animationUrls]);
+  }, [vrm, animationUrls, gender]);
 
   // ── State → animation crossfade (smooth 0.35s) ────────────────────────────
   useEffect(() => {
@@ -446,7 +453,7 @@ function AvatarModel({
     nextAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.35).play();
     currentAction?.fadeOut(0.35);
     currentActionRef.current = nextAction;
-  }, [animationsReady, state]);
+  }, [animationsReady, state, gender]);
 
   const frameAccRef = useRef(0);
   const restPoseAppliedRef = useRef(false);
@@ -490,22 +497,13 @@ function AvatarModel({
       return;
     }
 
-    // Dynamic TimeScale wandering to break periodic metronome loops
-    timeScaleTimer.current -= delta;
-    if (timeScaleTimer.current <= 0) {
-      timeScaleTargetRef.current = 0.94 + Math.random() * 0.11;
-      timeScaleTimer.current = 2.5 + Math.random() * 2.0;
-    }
+    // Continuous organic speed wandering to prevent metronome repetition
+    const speedWander = 0.94 + Math.sin(t * 0.43) * 0.08 + Math.cos(t * 0.27) * 0.04;
     if (mixerRef.current) {
-      mixerRef.current.timeScale = THREE.MathUtils.lerp(
-        mixerRef.current.timeScale,
-        timeScaleTargetRef.current,
-        Math.min(1, 1.8 * delta)
-      );
+      mixerRef.current.timeScale = speedWander;
     }
 
     mixerRef.current?.update(delta);
-    vrm?.update(delta);
 
     if (!vrm) return;
 
@@ -542,12 +540,12 @@ function AvatarModel({
       gazeTargetRef.current.position.copy(currentGazePos.current);
     }
 
-    // #5 - Eye contact: update gaze lookAt target frame-by-frame
+    // Eye contact: update gaze lookAt target frame-by-frame
     if (vrm.lookAt) {
       vrm.lookAt.update(delta);
     }
 
-    // ── 1. Smooth Blinking (#2 + #3) ──────────────────────────────────────────
+    // ── 1. Smooth Blinking ────────────────────────────────────────────────────
     if (enableBlinking) {
       blinkTimer.current -= delta;
       if (blinkTimer.current <= 0) {
@@ -579,24 +577,66 @@ function AvatarModel({
       exprTargetRef.current.blink = 0;
     }
 
-    // ── 2. Phoneme Lip Sync ───────────────────────────────────────────────────
-    // Zero out mouth shapes first
+    // ── 2. Natural Lip-Sync & Conversational Speech Cadence ─────────────────────
+    // Zero out mouth targets first
     exprTargetRef.current.aa = 0;
     exprTargetRef.current.ih = 0;
     exprTargetRef.current.ou = 0;
     exprTargetRef.current.ee = 0;
     exprTargetRef.current.oh = 0;
-    exprTargetRef.current.pp = 0;
-    exprTargetRef.current.ff = 0;
 
     if (enableLipSync && state === "speaking") {
-      const viseme = visemeRef?.current ?? { shape: "rest", intensity: 0 };
-      if (viseme.shape !== "rest" && viseme.shape in exprTargetRef.current) {
-        (exprTargetRef.current as any)[viseme.shape] = viseme.intensity;
+      const viseme = visemeRef?.current;
+      const hasActivePhoneme = Boolean(viseme && viseme.shape !== "rest" && viseme.intensity > 0.05);
+
+      if (hasActivePhoneme && viseme) {
+        const shape = viseme.shape;
+        const intensity = viseme.intensity;
+        if (shape === "aa") {
+          exprTargetRef.current.aa = intensity * 0.95;
+        } else if (shape === "ih") {
+          exprTargetRef.current.ih = intensity * 0.85;
+          exprTargetRef.current.ee = intensity * 0.25;
+        } else if (shape === "ou") {
+          exprTargetRef.current.ou = intensity * 0.90;
+        } else if (shape === "ee") {
+          exprTargetRef.current.ee = intensity * 0.80;
+          exprTargetRef.current.ih = intensity * 0.20;
+        } else if (shape === "oh") {
+          exprTargetRef.current.oh = intensity * 0.90;
+        } else if (shape === "pp") {
+          // Bilabial closure (m, b, p): lips compressed
+          exprTargetRef.current.ee = 0.08 * intensity;
+        } else if (shape === "ff") {
+          // Labiodental (f, v): slight teeth exposure
+          exprTargetRef.current.ee = 0.22 * intensity;
+          exprTargetRef.current.ih = 0.15 * intensity;
+        } else {
+          exprTargetRef.current.aa = 0.45 * intensity;
+        }
+      } else {
+        // Conversational speech cadence fallback (active during WebSpeech or pauses between phonemes)
+        const s1 = Math.sin(t * 14.2) * 0.5 + 0.5;
+        const s2 = Math.sin(t * 8.6 + 1.1) * 0.5 + 0.5;
+        const s3 = Math.sin(t * 21.0) * 0.5 + 0.5;
+        const rawCadence = s1 * 0.52 + s2 * 0.33 + s3 * 0.15;
+
+        // Subtle conversational clause pause (~every 2.7s)
+        const clausePhase = (t * 0.37) % 1;
+        const isPause = clausePhase > 0.88;
+        const cadenceAmp = isPause ? 0.04 : Math.min(0.85, rawCadence * 1.15);
+
+        // Cyclic Indonesian & English vowel distribution
+        const vPhase = (t * 3.6) % (Math.PI * 2);
+        exprTargetRef.current.aa = Math.max(0, Math.sin(vPhase)) * 0.70 * cadenceAmp;
+        exprTargetRef.current.oh = Math.max(0, Math.sin(vPhase + 1.25)) * 0.45 * cadenceAmp;
+        exprTargetRef.current.ih = Math.max(0, Math.sin(vPhase + 2.60)) * 0.35 * cadenceAmp;
+        exprTargetRef.current.ee = Math.max(0, Math.sin(vPhase + 3.90)) * 0.30 * cadenceAmp;
+        exprTargetRef.current.ou = Math.max(0, Math.sin(vPhase + 5.15)) * 0.35 * cadenceAmp;
       }
     }
 
-    // ── 3. Mood Mismatch Fix (#1) ─────────────────────────────────────────────
+    // ── 3. Mood Expressions ───────────────────────────────────────────────────
     if (enableMoods) {
       const m = (mood || "neutral").toLowerCase();
 
@@ -638,37 +678,37 @@ function AvatarModel({
       exprTargetRef.current.surprised = 0;
     }
 
-    // ── 4. Instant Mouth Closing & Viseme Lerp (#2 + #3) ──────────────────────
-    const MOUTH_KEYS = ["aa", "ih", "ou", "ee", "oh", "pp", "ff"] as const;
+    // ── 4. Smooth Expression Lerp & 3D Jaw Articulation ────────────────────────
+    const MOUTH_KEYS = ["aa", "ih", "ou", "ee", "oh"] as const;
     type MouthKey = typeof MOUTH_KEYS[number];
     const mouthKeySet = new Set<string>(MOUTH_KEYS);
-    const visemeActive = state === "speaking" && visemeRef?.current?.shape !== "rest";
-    const exprLerpFactor = Math.min(1, 8 * delta);
 
-    // If audio is at rest or not speaking, instantly kill all mouth blendshapes & clamp jaw bone
-    if (!visemeActive) {
-      for (const key of MOUTH_KEYS) {
-        exprCurrentRef.current[key as MouthKey] = 0;
-        exprTargetRef.current[key as MouthKey] = 0;
-        setExpression(vrm, key, 0);
-      }
-      const jaw = vrm.humanoid?.getNormalizedBoneNode("jaw" as VRMHumanBoneName);
-      if (jaw) {
-        jaw.rotation.x = THREE.MathUtils.lerp(jaw.rotation.x, 0, delta * 30);
-      }
-    } else {
-      const mouthLerpFactor = Math.min(1, 28 * delta);
-      for (const key of MOUTH_KEYS) {
-        const target  = exprTargetRef.current[key as MouthKey];
-        const current = exprCurrentRef.current[key as MouthKey];
-        const next    = THREE.MathUtils.lerp(current, target, mouthLerpFactor);
-        exprCurrentRef.current[key as MouthKey] = next;
-        setExpression(vrm, key, next);
-      }
+    // Mouth lerp: snappy open during speech, smooth glide closed when speech ends
+    const mouthLerpFactor = Math.min(1, (state === "speaking" ? 24 : 14) * delta);
+    for (const key of MOUTH_KEYS) {
+      const target  = exprTargetRef.current[key];
+      const current = exprCurrentRef.current[key];
+      const next    = THREE.MathUtils.lerp(current, target, mouthLerpFactor);
+      exprCurrentRef.current[key] = next;
+      setExpression(vrm, key, next);
     }
 
-    // Lerp non-mouth facial expressions (happy, angry, sad, etc.)
+    // 3D Jaw Bone opening
+    const jaw = vrm.humanoid?.getNormalizedBoneNode("jaw" as VRMHumanBoneName);
+    if (jaw) {
+      const openAmount = Math.max(
+        exprCurrentRef.current.aa,
+        exprCurrentRef.current.oh * 0.85,
+        exprCurrentRef.current.ou * 0.60,
+        exprCurrentRef.current.ee * 0.35
+      );
+      const targetJawX = state === "speaking" ? openAmount * 0.11 : 0;
+      jaw.rotation.x = THREE.MathUtils.lerp(jaw.rotation.x, targetJawX, Math.min(1, 22 * delta));
+    }
+
+    // Non-mouth expressions (happy, angry, sad, etc.)
     const nonMouthKeys = EXPR_KEYS.filter((k) => !mouthKeySet.has(k));
+    const exprLerpFactor = Math.min(1, 8 * delta);
     for (const key of nonMouthKeys) {
       const target  = exprTargetRef.current[key];
       const current = exprCurrentRef.current[key];
@@ -677,71 +717,105 @@ function AvatarModel({
       setExpression(vrm, key, next);
     }
 
-    // ── 5. Organic Micro Movements (#6 + #11) ──────────────────────────────────
-    const head  = vrm.humanoid?.getNormalizedBoneNode("head" as VRMHumanBoneName);
-    const neck  = vrm.humanoid?.getNormalizedBoneNode("neck" as VRMHumanBoneName);
+    // ── 5. Organic Multi-Frequency Life & Body Dynamics ────────────────────────
+    const head      = vrm.humanoid?.getNormalizedBoneNode("head" as VRMHumanBoneName);
+    const neck      = vrm.humanoid?.getNormalizedBoneNode("neck" as VRMHumanBoneName);
     const spine     = vrm.humanoid?.getNormalizedBoneNode("spine" as VRMHumanBoneName);
     const chest     = vrm.humanoid?.getNormalizedBoneNode("chest" as VRMHumanBoneName);
     const lShoulder = vrm.humanoid?.getNormalizedBoneNode("leftShoulder" as VRMHumanBoneName);
     const rShoulder = vrm.humanoid?.getNormalizedBoneNode("rightShoulder" as VRMHumanBoneName);
 
-    // Multi-frequency organic breathing on spine, chest, & shoulders (breaks single-periodicity)
-    const breathMotion = Math.sin(t * 0.77) * 0.005 + Math.sin(t * 1.39) * 0.003;
-    if (spine) spine.rotation.x += breathMotion;
-    if (chest) chest.rotation.x += breathMotion * 1.2;
-    if (lShoulder) lShoulder.rotation.z += Math.sin(t * 0.77) * 0.004;
-    if (rShoulder) rShoulder.rotation.z -= Math.sin(t * 0.77) * 0.004;
+    // Natural breathing cycle (~4.2s inhale/exhale) + posture weight shift (~9s cycle)
+    const breathCycle = Math.sin(t * 1.5);
+    const postureSwayZ = Math.sin(t * 0.22) * 0.012 + Math.cos(t * 0.13) * 0.007; // lateral weight transfer
+    const postureSwayY = Math.cos(t * 0.17) * 0.010; // subtle torso axial rotation
+
+    if (spine) {
+      spine.rotation.x += breathCycle * 0.008;
+      spine.rotation.y += postureSwayY * 0.5;
+      spine.rotation.z += postureSwayZ * 0.6;
+    }
+    if (chest) {
+      chest.rotation.x += breathCycle * 0.012;
+      chest.rotation.y += postureSwayY * 0.5;
+      chest.rotation.z += postureSwayZ * 0.4;
+    }
+    if (lShoulder) {
+      lShoulder.rotation.z += breathCycle * 0.006;
+    }
+    if (rShoulder) {
+      rShoulder.rotation.z -= breathCycle * 0.006;
+    }
 
     if (head) {
       const { x, y, z } = head.rotation;
       let offsetX = 0;
       let offsetY = 0;
       let offsetZ = 0;
-      if (state === "idle") {
-        offsetY = Math.sin(t * 0.37) * 0.014 + Math.cos(t * 0.79) * 0.007;
-        offsetX = Math.sin(t * 0.23 + 1.1) * 0.008 + Math.cos(t * 0.51) * 0.004;
-        offsetZ = Math.sin(t * 0.17 + 0.5) * 0.006;
+
+      if (state === "speaking") {
+        // Conversational speech nodding & head emphasis
+        const speechNod = Math.sin(t * 3.8) * 0.014 + Math.cos(t * 2.2) * 0.008;
+        offsetX = speechNod + Math.sin(t * 0.44 + 0.8) * 0.006;
+        offsetY = Math.sin(t * 1.6) * 0.014 + Math.cos(t * 0.7) * 0.006;
+        offsetZ = Math.sin(t * 0.9) * 0.008;
       } else if (state === "thinking") {
+        // Reflective head angle (tilted slightly up & to side)
         offsetY = Math.sin(t * 0.22) * 0.022 + Math.cos(t * 0.63) * 0.008;
-        offsetX = -0.02 - Math.sin(t * 0.16) * 0.01;
-        offsetZ = Math.sin(t * 0.13) * 0.009;
-      } else if (state === "speaking") {
-        offsetY = Math.sin(t * 0.58) * 0.012 + Math.cos(t * 1.14) * 0.006;
-        offsetX = Math.sin(t * 0.44 + 0.8) * 0.009;
-        offsetZ = Math.sin(t * 0.31) * 0.005;
+        offsetX = -0.018 - Math.sin(t * 0.16) * 0.008;
+        offsetZ = 0.012 + Math.sin(t * 0.13) * 0.006;
+      } else if (state === "listening") {
+        // Attentive listening tilt and subtle rhythmic micro-nod
+        const listenNod = Math.pow(Math.max(0, Math.sin(t * 1.6)), 2) * 0.016;
+        offsetX = listenNod + Math.sin(t * 0.25) * 0.006;
+        offsetY = Math.sin(t * 0.35) * 0.010;
+        offsetZ = 0.015 + Math.cos(t * 0.28) * 0.006;
+      } else {
+        // Idle organic wander
+        offsetY = Math.sin(t * 0.31) * 0.015 + Math.cos(t * 0.71) * 0.007;
+        offsetX = Math.sin(t * 0.21 + 1.1) * 0.007 + Math.cos(t * 0.47) * 0.004;
+        offsetZ = Math.sin(t * 0.15 + 0.5) * 0.006;
       }
       head.rotation.set(x + offsetX, y + offsetY, z + offsetZ);
     }
 
     if (neck) {
       if (state === "listening") {
-        const nodPulse = Math.pow(Math.max(0, Math.sin(t * 1.7)), 3) * 0.022;
-        neck.rotation.z += 0.015 + Math.sin(t * 0.41) * 0.007;
-        neck.rotation.x += nodPulse + Math.cos(t * 0.29 + 0.5) * 0.007;
+        neck.rotation.x += Math.pow(Math.max(0, Math.sin(t * 1.6)), 3) * 0.014;
+        neck.rotation.z += 0.012 + Math.sin(t * 0.38) * 0.006;
+      } else if (state === "speaking") {
+        neck.rotation.x += Math.sin(t * 3.8) * 0.006;
       }
     }
 
-    if (state === "speaking") {
-      const gesture = gestureRef.current;
-      if (!gesture.active && t >= gesture.nextAt) {
-        gesture.active = true;
-        gesture.startedAt = t;
-        gesture.side = Math.random() < 0.5 ? -1 : 1;
-      }
-      if (gesture.active) {
-        const elapsed = t - gesture.startedAt;
-        const weight = elapsed < 0.18 ? elapsed / 0.18 : Math.max(0, 1 - (elapsed - 0.18) / 0.62);
-        const arm = vrm.humanoid?.getNormalizedBoneNode(gesture.side < 0 ? "leftUpperArm" : "rightUpperArm");
-        if (arm) arm.rotation.z = arm.rotation.z - gesture.side * weight * 0.09;
-        if (elapsed >= 0.8) {
-          gesture.active = false;
-          gesture.nextAt = t + 1.4 + Math.random() * 1.8;
+    // Dynamically modulate gesture intensity during speaking so each cycle has a different amplitude
+    const currentAction = currentActionRef.current;
+    if (state === "speaking" && currentAction) {
+      const dynamicWeight = 0.72 + Math.sin(t * 0.55) * 0.26;
+      currentAction.setEffectiveWeight(dynamicWeight);
+    }
+
+    // Natural speaking arm restraint: prevents robotic wide-arm flailing / horizontal T-pose
+    if (state === "speaking" && vrm.humanoid) {
+      const lUpperArm = vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
+      const rUpperArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
+      if (lUpperArm) {
+        armEulerRef.current.setFromQuaternion(lUpperArm.quaternion);
+        if (armEulerRef.current.z > -0.85) {
+          armEulerRef.current.z = -0.85;
+          lUpperArm.quaternion.setFromEuler(armEulerRef.current);
         }
       }
-    } else {
-      gestureRef.current.active = false;
+      if (rUpperArm) {
+        armEulerRef.current.setFromQuaternion(rUpperArm.quaternion);
+        if (armEulerRef.current.z < 0.85) {
+          armEulerRef.current.z = 0.85;
+          rUpperArm.quaternion.setFromEuler(armEulerRef.current);
+        }
+      }
     }
 
+    // Final single VRM update per frame
     vrm.update(delta);
   });
 

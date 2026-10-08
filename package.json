@@ -1,0 +1,12 @@
+{
+  "name": "ai-sales-coach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sales AI Coach Monorepo",
+  "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File ./start-local.ps1",
+    "dev:backend": "npm run --prefix Backend dev",
+    "dev:frontend": "npm run --prefix Frontend dev",
+    "dev:tts": "cd BackendTTS && .\\venv\\Scripts\\python.exe main.py"
+  }
+}

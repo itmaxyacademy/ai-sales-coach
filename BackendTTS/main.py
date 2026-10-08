@@ -25,8 +25,8 @@ VOICE_MAP = {
     },
     # English
     "en": {
-        "female": ["en-US-JennyNeural", "en-US-AriaNeural"],
-        "male": ["en-US-GuyNeural", "en-US-ChristopherNeural"],
+        "female": ["en-US-JennyNeural"],
+        "male": ["en-US-GuyNeural"],
     }
 }
 
@@ -34,7 +34,7 @@ LEGACY_VOICES = {
     "M1": "id-ID-ArdiNeural",
     "M2": "id-ID-ArdiNeural",
     "M3": "en-US-GuyNeural",
-    "M4": "en-US-ChristopherNeural",
+    "M4": "en-US-GuyNeural",
     "M5": "id-ID-ArdiNeural",
     "F1": "id-ID-GadisNeural",
     "F2": "en-US-JennyNeural",
@@ -46,6 +46,8 @@ class TTSRequest(BaseModel):
     voice: str = "M1"
     gender: str = ""
     lang: str = "id"
+    rate: str = "+0%"
+    pitch: str = "+0Hz"
 
 def resolve_voice(req: TTSRequest) -> str:
     lang = "en" if req.lang.lower().startswith("en") else "id"
@@ -72,7 +74,7 @@ async def synthesize(req: TTSRequest):
     tmp.close()
 
     try:
-        communicate = edge_tts.Communicate(req.text, selected_voice)
+        communicate = edge_tts.Communicate(req.text, selected_voice, rate=req.rate, pitch=req.pitch)
         await communicate.save(tmp.name)
 
         def remove_temp_file(path: str):

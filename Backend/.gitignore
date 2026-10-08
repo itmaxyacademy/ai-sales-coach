@@ -49,7 +49,9 @@ Thumbs.db
 *.tsbuildinfo
 
 # =====================================================
-# Testing
+# Testing & Cache
 # =====================================================
 coverage/
 .nyc_output/
+cache/
+.pgdata/

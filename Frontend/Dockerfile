@@ -1,5 +1,5 @@
 # ============================================================
-# Stage 1 — deps: Install dependencies only
+# Stage 1 - deps: Install dependencies only
 # ============================================================
 FROM node:20-alpine AS deps
 
@@ -13,7 +13,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 # ============================================================
-# Stage 2 — builder: Build the Next.js application
+# Stage 2 - builder: Build the Next.js application
 # ============================================================
 FROM node:20-alpine AS builder
 
@@ -42,7 +42,7 @@ COPY . .
 RUN npm run build
 
 # ============================================================
-# Stage 3 — runner: Minimal production image
+# Stage 3 - runner: Minimal production image
 # ============================================================
 FROM node:20-alpine AS runner
 
