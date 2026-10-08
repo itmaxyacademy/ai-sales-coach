@@ -233,8 +233,11 @@ export const chat: RequestHandler = async (req, res, next) => {
 
     if (!session) throw new HttpError(404, 'Sesi tidak ditemukan atau sudah selesai.');
 
+    const sessionMetaReport = session.feedbackReport as any;
+    const effectiveChatMaxTurns = sessionMetaReport?.maxTurns ?? session.course.maxTurns;
+
     // Cek max turns atau sudah decided
-    if (session.turnCount >= session.course.maxTurns) {
+    if (session.turnCount >= effectiveChatMaxTurns) {
       throw new HttpError(400, 'Sesi sudah mencapai batas maksimum turn. Silakan selesaikan sesi.');
     }
     if (session.customerStage === 'decided') {
@@ -256,14 +259,25 @@ export const chat: RequestHandler = async (req, res, next) => {
 
     // 1. Generate customer response + RAG stream.
     // Bisa throw HttpError(400) jika pesan mengandung konten berbahaya - sebelum SSE dibuka.
-    const { customerResponseStream, ragContextUsed } = await generateRoleplayResponse({
-      course: session.course,
-      state: currentState,
-      history,
-      salesMessage: message,
-      companyContext: (session.course as any).company,
-      language,
-    });
+    let roleplayResult;
+    try {
+      roleplayResult = await generateRoleplayResponse({
+        course: session.course,
+        state: currentState,
+        history,
+        salesMessage: message,
+        companyContext: (session.course as any).company,
+        language,
+      });
+    } catch (llmErr: any) {
+      if (llmErr instanceof HttpError) throw llmErr;
+      logger.error({ err: llmErr, sessionId }, '[chat] Gagal generate roleplay response dari LLM');
+      if (llmErr?.status === 429) {
+        throw new HttpError(429, 'Batas penggunaan AI tercapai. Silakan tunggu sebentar dan coba lagi.');
+      }
+      throw new HttpError(503, 'Layanan AI sedang sibuk atau mengalami kendala koneksi. Silakan coba kirim ulang.');
+    }
+    const { customerResponseStream, ragContextUsed } = roleplayResult;
 
     // Setup SSE headers - hanya dibuka setelah generateRoleplayResponse sukses
     res.setHeader('Content-Type', 'text/event-stream');
@@ -330,8 +344,6 @@ export const chat: RequestHandler = async (req, res, next) => {
     ]);
 
     // 4. Cek apakah session harus auto-end
-    const sessionMetaReport = session.feedbackReport as any;
-    const effectiveChatMaxTurns = sessionMetaReport?.maxTurns ?? session.course.maxTurns;
     const isDecided = stateUpdate.newStage === 'decided';
     const isMaxTurn = newTurnCount >= effectiveChatMaxTurns;
 

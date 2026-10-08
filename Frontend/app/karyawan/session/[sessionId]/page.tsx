@@ -1146,21 +1146,52 @@ useEffect(() => {
       const { useAuthStore } = await import("../../../../store/authStore");
       const token = useAuthStore.getState().token;
 
-      const response = await fetch("/api/backend/sessions/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ sessionId, message: userMsg, language }),
-      });
+      const directBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/$/, "");
+      const directUrl = `${directBaseUrl}/sessions/chat`;
+      const proxyUrl = "/api/backend/sessions/chat";
+
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      };
+      const reqBody = JSON.stringify({ sessionId, message: userMsg, language });
+
+      let response: Response;
+      try {
+        response = await fetch(directUrl, {
+          method: "POST",
+          headers,
+          body: reqBody,
+        });
+        if (!response.ok && response.status >= 500) {
+          const proxyRes = await fetch(proxyUrl, {
+            method: "POST",
+            headers,
+            body: reqBody,
+          }).catch(() => null);
+          if (proxyRes && proxyRes.ok) {
+            response = proxyRes;
+          }
+        }
+      } catch {
+        // Fallback to Next.js proxy if direct fetch failed (e.g. CORS or network interface issue)
+        response = await fetch(proxyUrl, {
+          method: "POST",
+          headers,
+          body: reqBody,
+        });
+      }
 
       if (!response.ok) {
         const responseText = await response.text();
         let message = `Pesan gagal dikirim (HTTP ${response.status}).`;
         try {
-          message = JSON.parse(responseText).message || message;
+          const parsed = JSON.parse(responseText);
+          message = parsed.message || parsed.error?.message || (typeof parsed.error === "string" ? parsed.error : message);
         } catch {}
+        if (response.status === 500 && message.startsWith("Pesan gagal dikirim")) {
+          message = "Koneksi ke AI terputus atau server sedang sibuk (HTTP 500). Silakan coba kirim ulang pesan Anda.";
+        }
         throw new Error(message);
       }
       responseAccepted = true;
