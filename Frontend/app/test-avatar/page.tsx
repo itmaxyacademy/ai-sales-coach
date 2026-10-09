@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 
 const AIAvatar3D = dynamic(
@@ -13,6 +15,12 @@ export default function TestAvatarPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 flex flex-col items-center justify-center font-sans">
+      <div className="w-full max-w-4xl mb-5">
+        <Link href="/manager/dashboard" className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
+          <ArrowLeft className="h-4 w-4" />
+          Kembali ke Dashboard
+        </Link>
+      </div>
       <h1 className="text-2xl font-bold mb-2">Showcase 3D Avatar (AI Sales Coach)</h1>
       <p className="text-slate-400 text-sm mb-6">Perbandingan Avatar Cowok (M1) vs Avatar Cewek (F1)</p>
 
