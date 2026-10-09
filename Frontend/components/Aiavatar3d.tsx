@@ -170,11 +170,11 @@ const applyNaturalRestPose = (vrm: VRM) => {
 
   // Lower arms from horizontal T-pose down along sides in natural relaxed standing posture
   if (lUpperArm) {
-    lUpperArm.rotation.set(0.08, 0.05, -1.25);
+    lUpperArm.rotation.set(0.08, 0.05, 1.25);
     lUpperArm.quaternion.setFromEuler(lUpperArm.rotation);
   }
   if (rUpperArm) {
-    rUpperArm.rotation.set(0.08, -0.05, 1.25);
+    rUpperArm.rotation.set(0.08, -0.05, -1.25);
     rUpperArm.quaternion.setFromEuler(rUpperArm.rotation);
   }
   if (lLowerArm) {
@@ -193,8 +193,6 @@ const applyNaturalRestPose = (vrm: VRM) => {
     rHand.rotation.set(0, 0, 0);
     rHand.quaternion.setFromEuler(rHand.rotation);
   }
-  vrm.humanoid.update();
-  vrm.update(0);
 };
 
 // Global cache for loaded FBX animation assets to prevent network re-downloads and lag
@@ -505,6 +503,9 @@ function AvatarModel({
     mixerRef.current?.update(delta);
 
     if (!vrm) return;
+
+    // Keep the FBX speech gesture from lifting arms into its source T-pose.
+    if (state === "speaking") applyNaturalRestPose(vrm);
 
     // Procedural Saccades (organic micro eye-darts)
     saccadeTimer.current -= delta;

@@ -281,7 +281,13 @@ export default function ManagerCoursesPage() {
             </div>
             <form onSubmit={handleAssignSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
               <div>
-                <label className="block text-xs font-semibold mb-2">Pilih Anggota Tim Sales</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold">Pilih Anggota Tim Sales</label>
+                  <div className="flex gap-3 text-xs">
+                    <button type="button" disabled={memberLoading || teamMembers.length === 0} onClick={() => setSelectedUsers(ids => [...new Set([...ids, ...teamMembers.filter(m => !existingAssignments.some((a: any) => a.userId === m.id || a.user?.id === m.id || a.assignedTo?.id === m.id)).map(m => m.id)])])} className="text-[var(--color-primary)] disabled:opacity-50">Pilih semua</button>
+                    <button type="button" disabled={memberLoading || teamMembers.length === 0} onClick={() => setSelectedUsers(ids => ids.filter(id => !teamMembers.some(m => m.id === id)))} className="text-[var(--color-text-muted)] disabled:opacity-50">Batal semua</button>
+                  </div>
+                </div>
                 <SearchInput value={memberSearch} onChange={value => { setMemberSearch(value); setMemberPage(1); }} placeholder="Cari nama anggota..." className="mb-2" />
                 <div className="border border-[var(--color-border)] rounded-lg p-2 max-h-56 overflow-y-auto bg-[var(--color-bg)] space-y-1.5">
                   {memberLoading ? (

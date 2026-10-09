@@ -84,6 +84,7 @@ model User {
   sessions            Session[]
   createdAssignments  TrainingAssignment[] @relation("AssignmentCreator")
   trainingAssignments TrainingAssignment[] @relation("AssignmentUser")
+  attendances         Attendance[]
   profile             TrainingProfile?
   badges              UserBadge[]
   company             Company?             @relation(fields: [companyId], references: [id])
@@ -341,6 +342,19 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Attendance {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  workDate   DateTime @map("work_date") @db.Date
+  checkInAt  DateTime @default(now()) @map("check_in_at")
+  checkOutAt DateTime? @map("check_out_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workDate])
+  @@index([workDate])
+  @@map("attendances")
 }
 
 model Badge {

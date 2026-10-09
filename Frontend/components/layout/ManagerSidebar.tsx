@@ -21,6 +21,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Bot,
+  ClipboardCheck,
 } from "lucide-react";
 import { useSidebarStore } from "../../store/sidebarStore";
 
@@ -31,6 +32,7 @@ const navigation = [
     items: [
       { name: "Team Dashboard", href: "/manager/dashboard", icon: LayoutDashboard },
       { name: "My Team", href: "/manager/team", icon: Users },
+      { name: "Absensi Tim", href: "/manager/attendance", icon: ClipboardCheck },
     ],
   },
   {
@@ -38,6 +40,7 @@ const navigation = [
     items: [
       { name: "Courses", href: "/manager/courses", icon: BookOpen },
       { name: "Sessions", href: "/manager/sessions", icon: Briefcase },
+      { name: "Avatar Showcase", href: "/test-avatar", icon: Bot },
     ],
   },
   {

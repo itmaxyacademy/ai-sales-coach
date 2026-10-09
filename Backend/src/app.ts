@@ -43,6 +43,7 @@ import { ttsRouter } from "./routes/tts.routes.js";
 import aiRouter from "./routes/ai.routes.js";
 
 import { companyRouter } from "./routes/company.routes.js";
+import { attendanceRouter } from "./routes/attendance.routes.js";
 
 
 
@@ -216,6 +217,7 @@ export function createApp() {
   app.use("/api/sessions", requireAuth, sessionRouter);
 
   app.use("/api/manager", requireAuth, managerRouter);
+  app.use("/api/attendance", requireAuth, attendanceRouter);
 
   app.use("/api/company", requireAuth, companyRouter);
 

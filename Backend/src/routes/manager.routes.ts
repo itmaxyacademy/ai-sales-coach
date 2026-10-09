@@ -19,6 +19,7 @@ import {
   getLeaderboardConfigHandler,
   updateLeaderboardConfigHandler
 } from "../controllers/leaderboardController.js";
+import { getTeamAttendance } from "../controllers/attendanceController.js";
 
 export const managerRouter = Router();
 
@@ -33,6 +34,7 @@ managerRouter.use((req, res, next) => {
 
 // Dashboard & Team
 managerRouter.get("/dashboard", getManagerDashboard);
+managerRouter.get("/attendance", getTeamAttendance);
 managerRouter.get("/team/export", exportTeamList);
 managerRouter.get("/team", getTeamList);
 managerRouter.get("/assignments", getTeamAssignments);

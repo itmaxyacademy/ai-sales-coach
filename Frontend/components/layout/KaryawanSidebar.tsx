@@ -22,6 +22,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Bot,
+  Clock3,
 } from "lucide-react";
 import { useSidebarStore } from "../../store/sidebarStore";
 
@@ -32,6 +33,7 @@ const navigation = [
     items: [
       { name: "Dashboard", href: "/karyawan/dashboard", icon: LayoutDashboard },
       { name: "My Assignments", href: "/karyawan/assignments", icon: ClipboardList },
+      { name: "Absensi", href: "/karyawan/attendance", icon: Clock3 },
       { name: "Start Roleplay", href: "/karyawan/courses", icon: BookOpen },
     ],
   },
