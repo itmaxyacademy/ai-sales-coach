@@ -79,7 +79,7 @@ const ANIMATION_URLS: Record<string, Record<AvatarState, string>> = {
     idle: "/animations/male/idle.fbx",
     listening: "/animations/male/listening.fbx",
     speaking: "/animations/male/speaking.fbx",
-    thinking: "/animations/male/thinking.fbx",
+    thinking: "/animations/female/thinking.fbx",
   },
   F: {
     idle: "/animations/female/idle.fbx",

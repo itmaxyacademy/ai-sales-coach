@@ -15,6 +15,7 @@ import { generateInsightReport, validateInsightEvidence, type InsightReport } fr
 import { generateFacialSummary } from '../services/facialService.js';
 import { calculateStateUpdate } from '../services/stateService.js';
 import { callGPTJson } from '../services/openaiClient.js';
+import { invalidateSAWCache } from '../services/leaderboardService.js';
 
 // ─── TTS VOICE HELPER ────────────────────────────────
 const MALE_VOICES = ['M1', 'M2', 'M3', 'M4', 'M5'];
@@ -531,6 +532,8 @@ export async function finalizeSession(
         where: { sessionId, userId },
         data: { status: 'completed', completedAt: new Date() },
       });
+
+      invalidateSAWCache();
 
       const newBadges = await checkAndUnlockBadges(userId, {
         totalScore: insightReport.totalScore,

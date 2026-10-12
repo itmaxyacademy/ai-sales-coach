@@ -100,8 +100,9 @@ export function Header() {
       ? "/admin/me"
       : undefined;
 
-  // Fetch Recent Sessions for Global Search
+  // Fetch Recent Sessions for Global Search (Lazy fetch only when search palette is opened)
   useEffect(() => {
+    if (!isSearchOpen || recentSessions.length > 0) return;
     if (user?.role === "karyawan") {
       apiClient.get("/sessions/history?limit=3")
         .then(res => { if (res?.sessions) setRecentSessions(res.sessions); })
@@ -114,7 +115,7 @@ export function Header() {
         })
         .catch(() => {});
     }
-  }, [user?.role]);
+  }, [isSearchOpen, user?.role, recentSessions.length]);
 
   // --- Dynamic Search Index (100% Mapping dari Semua Sidebar) ---
   const getSearchIndex = (): SearchItem[] => {

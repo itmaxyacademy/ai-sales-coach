@@ -82,29 +82,20 @@ export default function KaryawanDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.allSettled([
-      apiClient.get("/me/dashboard"),
-      apiClient.get("/me/stats"),
-      apiClient.get("/courses"),
-      apiClient.get("/me/stats/weekly"),
-      apiClient.get("/assignments"),
-    ]).then(([dashRes, statsRes, coursesRes, weeklyRes, assignRes]) => {
-      if (dashRes.status === "fulfilled" && dashRes.value?.data)
-        setDashboard(dashRes.value.data);
-      if (statsRes.status === "fulfilled" && statsRes.value?.data)
-        setStats(statsRes.value.data);
-      if (coursesRes.status === "fulfilled" && coursesRes.value?.courses)
-        setCourses(coursesRes.value.courses.slice(0, 3));
-      if (weeklyRes.status === "fulfilled" && weeklyRes.value?.data)
-        setWeeklyStats(weeklyRes.value.data);
-      if (assignRes.status === "fulfilled" && assignRes.value?.assignments) {
-        const pending = assignRes.value.assignments
-          .filter((a: any) => a.status !== "completed")
-          .slice(0, 5);
-        setPendingAssignmentsRaw(pending);
-      }
-      setLoading(false);
-    });
+    apiClient
+      .get("/me/dashboard")
+      .then((res) => {
+        const d = res?.data;
+        if (d) {
+          setDashboard(d);
+          if (d.stats) setStats(d.stats);
+          if (d.quickCourses) setCourses(d.quickCourses);
+          if (d.weeklyStats) setWeeklyStats(d.weeklyStats);
+          if (d.pendingAssignments) setPendingAssignmentsRaw(d.pendingAssignments);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const firstName = user?.name?.split(" ")[0] ?? "there";

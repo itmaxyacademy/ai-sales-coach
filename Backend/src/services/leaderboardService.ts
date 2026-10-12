@@ -224,6 +224,14 @@ function computeV(criteria: SAWCriteria, weights: SAWWeights): number {
   );
 }
 
+// ponytail: in-memory cache TTL 5 menit untuk ranking SAW
+const sawCache = new Map<string, { data: RankedUser[]; expireAt: number }>();
+const SAW_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function invalidateSAWCache(): void {
+  sawCache.clear();
+}
+
 /**
  * Calculate SAW rankings for given userIds
  */
@@ -234,6 +242,13 @@ export async function calculateSAW(
   includeBreakdown = false
 ): Promise<RankedUser[]> {
   if (userIds.length === 0) return [];
+
+  const cacheKey = `${[...userIds].sort().join(',')}:${period}:${weights ? JSON.stringify(weights) : 'def'}:${includeBreakdown}`;
+  const now = Date.now();
+  const cached = sawCache.get(cacheKey);
+  if (cached && cached.expireAt > now) {
+    return cached.data;
+  }
 
   const w = weights ?? (await getWeights());
   const rawCriteria = await computeRawCriteria(userIds, period);
@@ -288,6 +303,8 @@ export async function calculateSAW(
 
   results.sort((a, b) => b.sawScore - a.sawScore);
   results.forEach((r, i) => { r.rank = i + 1; });
+
+  sawCache.set(cacheKey, { data: results, expireAt: now + SAW_CACHE_TTL_MS });
 
   return results;
 }
@@ -381,4 +398,5 @@ export async function updateLeaderboardConfig(
       },
     });
   }
+  invalidateSAWCache();
 }

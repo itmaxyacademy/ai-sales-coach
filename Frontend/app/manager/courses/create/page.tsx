@@ -633,6 +633,10 @@ function AIGenerateModal({
                       </span>
                       <span className="text-[10px] text-[var(--color-text-muted)] font-mono">{generatedCourse.personaGender === "F" ? "Wanita" : "Pria"}</span>
                     </div>
+                    <AvatarSelector
+                      value={generatedCourse.personaGender || "M"}
+                      onChange={personaGender => setGeneratedCourse((course: any) => ({ ...course, personaGender }))}
+                    />
                     <p className="text-sm font-bold text-[var(--color-text)]">{generatedCourse.personaName} ({generatedCourse.personaRole})</p>
                     <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">{generatedCourse.personaBackground}</p>
                     <div className="pt-1 flex flex-wrap gap-1.5">

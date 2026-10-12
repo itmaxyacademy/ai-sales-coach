@@ -10,7 +10,6 @@ import { HttpError } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import {
   calculateSAW,
-  getUserSAWScore,
 } from "../services/leaderboardService.js";
 
 // ──────────────────────────────────────────────────────────────
@@ -23,15 +22,23 @@ export const getMyDashboard: RequestHandler = async (req, res, next) => {
 
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    const [pendingAssignments, weekSessions, lastSession, allSessions, allKaryawanIds] =
+    const getStartOfThisWeek = () => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      monday.setHours(0, 0, 0, 0);
+      return monday;
+    };
+    const thisWeekStart = getStartOfThisWeek();
+    const lastWeekStart = new Date(thisWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // ponytail: 4 lightweight parallel queries instead of 15+ sequential roundtrips
+    const [pendingAssignments, allSessions, allAssignments, allKaryawanIds, quickCourses] =
       await Promise.all([
-        // Pending assignments (max 5, sort dueAt asc)
         prisma.trainingAssignment.findMany({
           where: { userId, status: { in: ['pending', 'in_progress'] } },
           include: {
@@ -40,24 +47,21 @@ export const getMyDashboard: RequestHandler = async (req, res, next) => {
           orderBy: { dueAt: 'asc' },
           take: 5,
         }),
-        // Sessions this week
-        prisma.session.findMany({
-          where: { userId, status: 'completed', completedAt: { gte: weekAgo } },
-          select: { totalScore: true },
-        }),
-        // Last completed session
-        prisma.session.findFirst({
-          where: { userId, status: 'completed' },
-          include: { course: { select: { title: true } } },
-          orderBy: { completedAt: 'desc' },
-        }),
-        // All completed sessions for streak
         prisma.session.findMany({
           where: { userId, status: 'completed' },
-          select: { completedAt: true },
+          select: {
+            id: true,
+            totalScore: true,
+            outcome: true,
+            completedAt: true,
+            course: { select: { title: true } },
+          },
           orderBy: { completedAt: 'desc' },
         }),
-        // All karyawan IDs for SAW ranking (scoped to user's company if applicable)
+        prisma.trainingAssignment.findMany({
+          where: { userId },
+          select: { status: true, dueAt: true, completedAt: true },
+        }),
         prisma.user.findMany({
           where: {
             role: 'karyawan',
@@ -66,9 +70,17 @@ export const getMyDashboard: RequestHandler = async (req, res, next) => {
           },
           select: { id: true },
         }),
+        prisma.course.findMany({
+          where: { isActive: true },
+          select: { id: true, title: true, difficulty: true, category: true },
+          orderBy: { createdAt: 'desc' },
+          take: 3,
+        }),
       ]);
 
-    // Avg score this week
+    // Sessions metrics
+    const lastSession = allSessions[0] || null;
+    const weekSessions = allSessions.filter((s) => s.completedAt && s.completedAt >= weekAgo);
     const weekScores = weekSessions
       .map((s) => s.totalScore)
       .filter((s): s is number => s !== null);
@@ -90,20 +102,89 @@ export const getMyDashboard: RequestHandler = async (req, res, next) => {
       checkDate.setDate(checkDate.getDate() - 1);
     }
 
-    // SAW ranking
+    // Cached SAW Ranking (hits in-memory TTL cache)
     const karyawanIds = allKaryawanIds.map((u) => u.id);
     let rankingPosition: number | null = null;
+    let sawScore = 0;
+    let sawRank: number | null = null;
     if (karyawanIds.length > 0) {
-      const rankings = await calculateSAW(karyawanIds, "monthly");
+      const rankings = await calculateSAW(karyawanIds, "monthly", undefined, true);
       const myRank = rankings.find((r) => r.userId === userId);
       rankingPosition = myRank?.rank ?? null;
+      sawScore = myRank?.sawScore ?? 0;
+      sawRank = rankingPosition;
     }
+
+    // Consolidated Stats
+    const totalSessions = allSessions.length;
+    const allScores = allSessions
+      .map((s) => s.totalScore)
+      .filter((s): s is number => s !== null);
+    const avgScore =
+      allScores.length > 0
+        ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+        : 0;
+    const bestScore = allScores.length > 0 ? Math.max(...allScores) : 0;
+
+    const closedCount = allSessions.filter((s) => s.outcome === "closed").length;
+    const followUpCount = allSessions.filter((s) => s.outcome === "follow_up").length;
+    const rejectedCount = allSessions.filter((s) => s.outcome === "rejected").length;
+    const outcomeRate = {
+      closed: totalSessions > 0 ? Math.round((closedCount / totalSessions) * 100) : 0,
+      follow_up: totalSessions > 0 ? Math.round((followUpCount / totalSessions) * 100) : 0,
+      rejected: totalSessions > 0 ? Math.round((rejectedCount / totalSessions) * 100) : 0,
+    };
+
+    const completedAssignments = allAssignments.filter((a) => a.status === "completed").length;
+    const completionRate =
+      allAssignments.length > 0
+        ? Math.round((completedAssignments / allAssignments.length) * 100)
+        : 0;
+
+    // Weekly progress
+    const thisWeekSessions = allSessions.filter((s) => s.completedAt && s.completedAt >= thisWeekStart);
+    const lastWeekSessions = allSessions.filter((s) => s.completedAt && s.completedAt >= lastWeekStart && s.completedAt < thisWeekStart);
+
+    const thisWeekScores = thisWeekSessions.map((s) => s.totalScore).filter((s): s is number => s !== null);
+    const thisWeekAvg = thisWeekScores.length > 0 ? Math.round(thisWeekScores.reduce((a, b) => a + b, 0) / thisWeekScores.length) : null;
+    const lastWeekScores = lastWeekSessions.map((s) => s.totalScore).filter((s): s is number => s !== null);
+    const lastWeekAvg = lastWeekScores.length > 0 ? Math.round(lastWeekScores.reduce((a, b) => a + b, 0) / lastWeekScores.length) : null;
+
+    let avgDelta: number | null = null;
+    if (thisWeekAvg !== null && lastWeekAvg !== null) {
+      avgDelta = thisWeekAvg - lastWeekAvg;
+    } else if (thisWeekAvg !== null) {
+      avgDelta = thisWeekAvg;
+    }
+    const sessionsDelta = thisWeekSessions.length - lastWeekSessions.length;
+    let trend: "up" | "down" | "stable" = "stable";
+    if (avgDelta !== null) {
+      if (avgDelta > 0) trend = "up";
+      else if (avgDelta < 0) trend = "down";
+    }
+
+    const weeklyStats = {
+      thisWeek: {
+        avgScore: thisWeekAvg,
+        totalSessions: thisWeekSessions.length,
+      },
+      lastWeek: {
+        avgScore: lastWeekAvg,
+        totalSessions: lastWeekSessions.length,
+      },
+      delta: {
+        avgScore: avgDelta,
+        sessions: sessionsDelta,
+        trend,
+      },
+    };
 
     res.json({
       data: {
         pendingAssignments: pendingAssignments.map((a) => ({
           id: a.id,
           courseId: a.course.id,
+          course: a.course,
           courseTitle: a.course.title,
           difficulty: a.course.difficulty,
           category: a.course.category,
@@ -121,6 +202,17 @@ export const getMyDashboard: RequestHandler = async (req, res, next) => {
             }
           : null,
         streakDays,
+        stats: {
+          totalSessions,
+          avgScore,
+          bestScore,
+          completionRate,
+          outcomeRate,
+          sawScore,
+          sawRank,
+        },
+        weeklyStats,
+        quickCourses,
       },
     });
   } catch (e) {
@@ -136,7 +228,7 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
     if (!req.user) throw new HttpError(401, "Login diperlukan.");
     const userId = req.user.sub;
 
-    const [sessions, assignments, sawDetail, allKaryawanIds] = await Promise.all([
+    const [sessions, assignments, allKaryawanIds] = await Promise.all([
       prisma.session.findMany({
         where: { userId, status: 'completed' },
         select: { totalScore: true, outcome: true, completedAt: true },
@@ -146,7 +238,6 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
         where: { userId },
         select: { status: true, dueAt: true, completedAt: true },
       }),
-      getUserSAWScore(userId, 'monthly'),
       prisma.user.findMany({
         where: {
           role: 'karyawan',
@@ -227,12 +318,14 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
         ? Math.round((onTime.length / withDue.length) * 100)
         : 0;
 
-    // SAW rank
+    // SAW rank (hits in-memory TTL cache with breakdown)
     const karyawanIds = allKaryawanIds.map((u) => u.id);
     let sawRank: number | null = null;
-    if (karyawanIds.length > 0 && sawDetail) {
-      const rankings = await calculateSAW(karyawanIds, "monthly");
-      sawRank = rankings.find((r) => r.userId === userId)?.rank ?? null;
+    let myRankInfo: any = null;
+    if (karyawanIds.length > 0) {
+      const rankings = await calculateSAW(karyawanIds, "monthly", undefined, true);
+      myRankInfo = rankings.find((r) => r.userId === userId);
+      sawRank = myRankInfo?.rank ?? null;
     }
 
     res.json({
@@ -244,9 +337,9 @@ export const getMyStats: RequestHandler = async (req, res, next) => {
         completionRate,
         improvementRate,
         deadlineRate,
-        sawScore: sawDetail?.sawScore ?? 0,
+        sawScore: myRankInfo?.sawScore ?? 0,
         sawRank,
-        sawBreakdown: sawDetail?.sawBreakdown ?? null,
+        sawBreakdown: myRankInfo?.sawBreakdown ?? null,
       },
     });
   } catch (e) {
